@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ガントチャート形式のシフト管理アプリ - シフトの追加・編集が簡単に行えます">
+    <title>シフト管理アプリ</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- ヘッダー -->
+        <header class="header">
+            <h1 class="header-title">
+                <span class="header-icon">📅</span>
+                シフト管理
+            </h1>
+            <div class="header-actions">
+                <button id="addShiftBtn" class="btn btn-primary">
+                    <span class="btn-icon">+</span>
+                    シフト追加
+                </button>
+            </div>
+        </header>
+
+        <!-- 日付ナビゲーション -->
+        <div class="date-nav">
+            <button id="prevWeek" class="nav-btn">
+                <span>◀</span>
+                前週
+            </button>
+            <div class="current-period" id="currentPeriod">2026年1月12日 〜 1月18日</div>
+            <button id="nextWeek" class="nav-btn">
+                次週
+                <span>▶</span>
+            </button>
+        </div>
+
+        <!-- ガントチャート -->
+        <div class="gantt-container">
+            <!-- 時間軸ヘッダー -->
+            <div class="gantt-header">
+                <div class="gantt-label-header">日付</div>
+                <div class="gantt-time-header" id="timeHeader">
+                    <!-- 0時〜24時のヘッダーがJSで生成される -->
+                </div>
+            </div>
+
+            <!-- ガントチャート本体 -->
+            <div class="gantt-body" id="ganttBody">
+                <!-- 日付行がJSで生成される -->
+            </div>
+        </div>
+
+        <!-- 凡例 -->
+        <div class="legend">
+            <div class="legend-title">担当者</div>
+            <div class="legend-items" id="legendItems">
+                <!-- 担当者の凡例がJSで生成される -->
+            </div>
+        </div>
+    </div>
+
+    <!-- シフト追加モーダル -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">シフト追加</h2>
+                <button class="modal-close" id="modalClose">×</button>
+            </div>
+            <form id="shiftForm" class="modal-body">
+                <div class="form-group">
+                    <label for="shiftDate">日付</label>
+                    <input type="date" id="shiftDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="shiftName">担当者名</label>
+                    <input type="text" id="shiftName" placeholder="例：田中太郎" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="shiftStart">開始時刻</label>
+                        <select id="shiftStart" required>
+                            <!-- 0〜23時の選択肢がJSで生成される -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="shiftEnd">終了時刻</label>
+                        <select id="shiftEnd" required>
+                            <!-- 1〜24時の選択肢がJSで生成される -->
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="shiftColor">色</label>
+                    <div class="color-picker" id="colorPicker">
+                        <button type="button" class="color-option" data-color="#6366f1" style="background: #6366f1;"></button>
+                        <button type="button" class="color-option" data-color="#8b5cf6" style="background: #8b5cf6;"></button>
+                        <button type="button" class="color-option" data-color="#ec4899" style="background: #ec4899;"></button>
+                        <button type="button" class="color-option" data-color="#14b8a6" style="background: #14b8a6;"></button>
+                        <button type="button" class="color-option" data-color="#f59e0b" style="background: #f59e0b;"></button>
+                        <button type="button" class="color-option" data-color="#10b981" style="background: #10b981;"></button>
+                    </div>
+                    <input type="hidden" id="shiftColor" value="#6366f1">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
