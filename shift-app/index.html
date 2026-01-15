@@ -1,13 +1,16 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="ガントチャート形式のシフト管理アプリ - シフトの追加・編集が簡単に行えます">
+    <meta name="description" content="ガントチャート形式のシフト管理アプリ - シフトの追加・編集・申請が簡単に行えます">
     <title>シフト管理アプリ</title>
     <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
 </head>
+
 <body>
     <div class="app-container">
         <!-- ヘッダー -->
@@ -17,12 +20,54 @@
                 シフト管理
             </h1>
             <div class="header-actions">
+                <!-- ロール切り替え -->
+                <div class="role-toggle">
+                    <span class="role-label">モード:</span>
+                    <button id="roleToggle" class="role-btn">
+                        <span class="role-icon">👤</span>
+                        <span id="roleText">スタッフ</span>
+                    </button>
+                </div>
                 <button id="addShiftBtn" class="btn btn-primary">
                     <span class="btn-icon">+</span>
                     シフト追加
                 </button>
+                <button id="requestChangeBtn" class="btn btn-secondary">
+                    🔄 シフト変更申請
+                </button>
+                <button id="shiftSwapBtn" class="btn btn-secondary">
+                    🤝 シフト交代依頼
+                </button>
+                <button id="requestLeaveBtn" class="btn btn-secondary">
+                    🏖️ 有給申請
+                </button>
             </div>
         </header>
+
+        <!-- 管理者パネル（管理者モード時のみ表示） -->
+        <div class="admin-panel" id="adminPanel" style="display: none;">
+            <div class="admin-header">
+                <h2>📋 管理者メニュー</h2>
+                <div class="admin-tabs">
+                    <button class="admin-tab active" data-tab="shiftChanges">シフト変更</button>
+                    <button class="admin-tab" data-tab="leaveRequests">有給申請</button>
+                    <button class="admin-tab" data-tab="employees">従業員管理</button>
+                    <button class="admin-tab" data-tab="broadcast">全員へ通知</button>
+                </div>
+            </div>
+            <div class="admin-content" id="adminContent">
+                <!-- 内容がJSで生成される -->
+            </div>
+        </div>
+
+        <!-- メッセージ通知バー -->
+        <div class="message-bar" id="messageBar" style="display: none;">
+            <div class="message-bar-content">
+                <span class="message-icon">📩</span>
+                <span id="messageCount">0</span>件の新しいメッセージ
+            </div>
+            <button id="viewMessagesBtn" class="btn btn-sm btn-primary">確認</button>
+        </div>
 
         <!-- 日付ナビゲーション -->
         <div class="date-nav">
@@ -66,47 +111,264 @@
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal">
             <div class="modal-header">
-                <h2 class="modal-title">シフト追加</h2>
+                <h2 class="modal-title" id="shiftModalTitle">シフト追加</h2>
                 <button class="modal-close" id="modalClose">×</button>
             </div>
             <form id="shiftForm" class="modal-body">
+                <input type="hidden" id="editShiftId" value="">
                 <div class="form-group">
                     <label for="shiftDate">日付</label>
                     <input type="date" id="shiftDate" required>
                 </div>
                 <div class="form-group">
                     <label for="shiftName">担当者名</label>
-                    <input type="text" id="shiftName" placeholder="例：田中太郎" required>
+                    <select id="shiftName" required>
+                        <option value="">選択してください</option>
+                    </select>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label for="shiftStart">開始時刻</label>
                         <select id="shiftStart" required>
-                            <!-- 0〜23時の選択肢がJSで生成される -->
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="shiftEnd">終了時刻</label>
                         <select id="shiftEnd" required>
-                            <!-- 1〜24時の選択肢がJSで生成される -->
                         </select>
                     </div>
+                </div>
+                <!-- 夜勤（翌日跨ぎ）オプション -->
+                <div class="form-group overnight-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="overnightShift">
+                        <span class="checkbox-text">🌙 夜勤（翌日に跨ぐ）</span>
+                    </label>
+                    <p class="form-hint">例：22:00〜翌9:00のシフト</p>
                 </div>
                 <div class="form-group">
                     <label for="shiftColor">色</label>
                     <div class="color-picker" id="colorPicker">
-                        <button type="button" class="color-option" data-color="#6366f1" style="background: #6366f1;"></button>
-                        <button type="button" class="color-option" data-color="#8b5cf6" style="background: #8b5cf6;"></button>
-                        <button type="button" class="color-option" data-color="#ec4899" style="background: #ec4899;"></button>
-                        <button type="button" class="color-option" data-color="#14b8a6" style="background: #14b8a6;"></button>
-                        <button type="button" class="color-option" data-color="#f59e0b" style="background: #f59e0b;"></button>
-                        <button type="button" class="color-option" data-color="#10b981" style="background: #10b981;"></button>
+                        <button type="button" class="color-option" data-color="#6366f1"
+                            style="background: #6366f1;"></button>
+                        <button type="button" class="color-option" data-color="#8b5cf6"
+                            style="background: #8b5cf6;"></button>
+                        <button type="button" class="color-option" data-color="#ec4899"
+                            style="background: #ec4899;"></button>
+                        <button type="button" class="color-option" data-color="#14b8a6"
+                            style="background: #14b8a6;"></button>
+                        <button type="button" class="color-option" data-color="#f59e0b"
+                            style="background: #f59e0b;"></button>
+                        <button type="button" class="color-option" data-color="#10b981"
+                            style="background: #10b981;"></button>
                     </div>
                     <input type="hidden" id="shiftColor" value="#6366f1">
                 </div>
+                <!-- 固定シフト設定 -->
+                <div class="form-group fixed-shift-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="fixedShift">
+                        <span class="checkbox-text">🔁 固定シフト（毎週繰り返し）</span>
+                    </label>
+                    <p class="form-hint">チェックすると、毎週同じ曜日・時間にシフトが自動表示されます</p>
+                </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" id="cancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary" id="shiftSubmitBtn">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- シフト変更申請モーダル -->
+    <div class="modal-overlay" id="changeModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🔄 シフト変更申請</h2>
+                <button class="modal-close" id="changeModalClose">×</button>
+            </div>
+            <form id="changeForm" class="modal-body">
+                <div class="form-group">
+                    <label for="changeShiftSelect">変更するシフト</label>
+                    <select id="changeShiftSelect" required>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="changeDate">新しい日付</label>
+                    <input type="date" id="changeDate" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="changeStart">新しい開始時刻</label>
+                        <select id="changeStart" required>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="changeEnd">新しい終了時刻</label>
+                        <select id="changeEnd" required>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="changeReason">変更理由</label>
+                    <textarea id="changeReason" placeholder="例：私用のため" rows="3" required></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="changeCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">申請</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- シフト交代依頼モーダル -->
+    <div class="modal-overlay" id="swapModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🤝 シフト交代依頼</h2>
+                <button class="modal-close" id="swapModalClose">×</button>
+            </div>
+            <form id="swapForm" class="modal-body">
+                <div class="form-group">
+                    <label for="swapShiftSelect">交代してほしいシフト</label>
+                    <select id="swapShiftSelect" required>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="swapTargetEmployee">依頼する相手</label>
+                    <select id="swapTargetEmployee" required>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="swapMessage">メッセージ</label>
+                    <textarea id="swapMessage" placeholder="例：急用ができてしまいました。シフトを変わっていただけませんか？" rows="3"
+                        required></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="swapCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">依頼を送る</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 有給申請モーダル -->
+    <div class="modal-overlay" id="leaveModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🏖️ 有給申請</h2>
+                <button class="modal-close" id="leaveModalClose">×</button>
+            </div>
+            <form id="leaveForm" class="modal-body">
+                <div class="form-group">
+                    <label for="leaveName">申請者名</label>
+                    <select id="leaveName" required>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="leaveStartDate">開始日</label>
+                        <input type="date" id="leaveStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="leaveEndDate">終了日</label>
+                        <input type="date" id="leaveEndDate" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="leaveReason">申請理由</label>
+                    <textarea id="leaveReason" placeholder="例：旅行のため" rows="3" required></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="leaveCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">申請</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 暗証番号入力モーダル -->
+    <div class="modal-overlay" id="pinModalOverlay">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2 class="modal-title">🔐 管理者認証</h2>
+                <button class="modal-close" id="pinModalClose">×</button>
+            </div>
+            <form id="pinForm" class="modal-body">
+                <div class="form-group">
+                    <label for="adminPin">暗証番号（4桁）</label>
+                    <input type="password" id="adminPin" placeholder="••••" maxlength="4" pattern="[0-9]{4}"
+                        inputmode="numeric" required>
+                    <p class="form-hint">初期暗証番号: 1234</p>
+                </div>
+                <p id="pinError" class="error-text" style="display: none;">暗証番号が間違っています</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="pinCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">認証</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- メッセージ一覧モーダル -->
+    <div class="modal-overlay" id="messagesModalOverlay">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h2 class="modal-title">📩 メッセージ</h2>
+                <button class="modal-close" id="messagesModalClose">×</button>
+            </div>
+            <div class="modal-body" id="messagesContent">
+                <!-- メッセージ一覧がJSで生成される -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 従業員追加モーダル -->
+    <div class="modal-overlay" id="employeeModalOverlay">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2 class="modal-title">👤 従業員追加</h2>
+                <button class="modal-close" id="employeeModalClose">×</button>
+            </div>
+            <form id="employeeForm" class="modal-body">
+                <div class="form-group">
+                    <label for="employeeName">名前</label>
+                    <input type="text" id="employeeName" placeholder="例：田中太郎" required>
+                </div>
+                <div class="form-group">
+                    <label for="employeeRole">役職</label>
+                    <select id="employeeRole" required>
+                        <option value="staff">スタッフ</option>
+                        <option value="leader">リーダー</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="employeeCancelBtn">キャンセル</button>
                     <button type="submit" class="btn btn-primary">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 全員へ通知モーダル -->
+    <div class="modal-overlay" id="broadcastModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">📢 全員へ通知</h2>
+                <button class="modal-close" id="broadcastModalClose">×</button>
+            </div>
+            <form id="broadcastForm" class="modal-body">
+                <div class="form-group">
+                    <label for="broadcastTitle">件名</label>
+                    <input type="text" id="broadcastTitle" placeholder="例：来週のシフトについて" required>
+                </div>
+                <div class="form-group">
+                    <label for="broadcastMessage">メッセージ</label>
+                    <textarea id="broadcastMessage" placeholder="全従業員に送信するメッセージを入力してください" rows="5" required></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="broadcastCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">送信</button>
                 </div>
             </form>
         </div>
@@ -114,4 +376,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>
