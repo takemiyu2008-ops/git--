@@ -9,10 +9,19 @@
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap"
         rel="stylesheet">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 
 <body>
     <div class="app-container">
+        <!-- 接続状態表示 -->
+        <div class="connection-status" id="connectionStatus">
+            <span class="status-dot"></span>
+            <span class="status-text">接続中...</span>
+        </div>
+
         <!-- ヘッダー -->
         <header class="header">
             <h1 class="header-title">
@@ -50,13 +59,14 @@
                 <h2>📋 管理者メニュー</h2>
                 <div class="admin-tabs">
                     <button class="admin-tab active" data-tab="shiftChanges">シフト変更</button>
+                    <button class="admin-tab" data-tab="shiftSwaps">シフト交換</button>
                     <button class="admin-tab" data-tab="leaveRequests">有給申請</button>
                     <button class="admin-tab" data-tab="employees">従業員管理</button>
                     <button class="admin-tab" data-tab="broadcast">全員へ通知</button>
+                    <button class="admin-tab" data-tab="settings">設定</button>
                 </div>
             </div>
             <div class="admin-content" id="adminContent">
-                <!-- 内容がJSで生成される -->
             </div>
         </div>
 
@@ -84,17 +94,12 @@
 
         <!-- ガントチャート -->
         <div class="gantt-container">
-            <!-- 時間軸ヘッダー -->
             <div class="gantt-header">
                 <div class="gantt-label-header">日付</div>
                 <div class="gantt-time-header" id="timeHeader">
-                    <!-- 0時〜24時のヘッダーがJSで生成される -->
                 </div>
             </div>
-
-            <!-- ガントチャート本体 -->
             <div class="gantt-body" id="ganttBody">
-                <!-- 日付行がJSで生成される -->
             </div>
         </div>
 
@@ -102,7 +107,6 @@
         <div class="legend">
             <div class="legend-title">担当者</div>
             <div class="legend-items" id="legendItems">
-                <!-- 担当者の凡例がJSで生成される -->
             </div>
         </div>
     </div>
@@ -119,9 +123,10 @@
                 <div class="form-group">
                     <label for="shiftDate">日付</label>
                     <input type="date" id="shiftDate" required>
+                    <p class="form-hint" id="shiftDateDay"></p>
                 </div>
                 <div class="form-group">
-                    <label for="shiftName">担当者名</label>
+                    <label for="shiftName">氏名</label>
                     <select id="shiftName" required>
                         <option value="">選択してください</option>
                     </select>
@@ -129,16 +134,13 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="shiftStart">開始時刻</label>
-                        <select id="shiftStart" required>
-                        </select>
+                        <select id="shiftStart" required></select>
                     </div>
                     <div class="form-group">
                         <label for="shiftEnd">終了時刻</label>
-                        <select id="shiftEnd" required>
-                        </select>
+                        <select id="shiftEnd" required></select>
                     </div>
                 </div>
-                <!-- 夜勤（翌日跨ぎ）オプション -->
                 <div class="form-group overnight-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="overnightShift">
@@ -164,7 +166,6 @@
                     </div>
                     <input type="hidden" id="shiftColor" value="#6366f1">
                 </div>
-                <!-- 固定シフト設定 -->
                 <div class="form-group fixed-shift-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="fixedShift">
@@ -189,9 +190,12 @@
             </div>
             <form id="changeForm" class="modal-body">
                 <div class="form-group">
+                    <label for="changeApplicant">申請者名</label>
+                    <select id="changeApplicant" required></select>
+                </div>
+                <div class="form-group">
                     <label for="changeShiftSelect">変更するシフト</label>
-                    <select id="changeShiftSelect" required>
-                    </select>
+                    <select id="changeShiftSelect" required></select>
                 </div>
                 <div class="form-group">
                     <label for="changeDate">新しい日付</label>
@@ -200,13 +204,11 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="changeStart">新しい開始時刻</label>
-                        <select id="changeStart" required>
-                        </select>
+                        <select id="changeStart" required></select>
                     </div>
                     <div class="form-group">
                         <label for="changeEnd">新しい終了時刻</label>
-                        <select id="changeEnd" required>
-                        </select>
+                        <select id="changeEnd" required></select>
                     </div>
                 </div>
                 <div class="form-group">
@@ -230,14 +232,16 @@
             </div>
             <form id="swapForm" class="modal-body">
                 <div class="form-group">
+                    <label for="swapApplicant">申請者名</label>
+                    <select id="swapApplicant" required></select>
+                </div>
+                <div class="form-group">
                     <label for="swapShiftSelect">交代してほしいシフト</label>
-                    <select id="swapShiftSelect" required>
-                    </select>
+                    <select id="swapShiftSelect" required></select>
                 </div>
                 <div class="form-group">
                     <label for="swapTargetEmployee">依頼する相手</label>
-                    <select id="swapTargetEmployee" required>
-                    </select>
+                    <select id="swapTargetEmployee" required></select>
                 </div>
                 <div class="form-group">
                     <label for="swapMessage">メッセージ</label>
@@ -262,8 +266,7 @@
             <form id="leaveForm" class="modal-body">
                 <div class="form-group">
                     <label for="leaveName">申請者名</label>
-                    <select id="leaveName" required>
-                    </select>
+                    <select id="leaveName" required></select>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -299,12 +302,43 @@
                     <label for="adminPin">暗証番号（4桁）</label>
                     <input type="password" id="adminPin" placeholder="••••" maxlength="4" pattern="[0-9]{4}"
                         inputmode="numeric" required>
-                    <p class="form-hint">初期暗証番号: 1234</p>
                 </div>
                 <p id="pinError" class="error-text" style="display: none;">暗証番号が間違っています</p>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" id="pinCancelBtn">キャンセル</button>
                     <button type="submit" class="btn btn-primary">認証</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 暗証番号変更モーダル -->
+    <div class="modal-overlay" id="changePinModalOverlay">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h2 class="modal-title">🔑 暗証番号変更</h2>
+                <button class="modal-close" id="changePinModalClose">×</button>
+            </div>
+            <form id="changePinForm" class="modal-body">
+                <div class="form-group">
+                    <label for="currentPin">現在の暗証番号</label>
+                    <input type="password" id="currentPin" placeholder="••••" maxlength="4" pattern="[0-9]{4}"
+                        inputmode="numeric" required>
+                </div>
+                <div class="form-group">
+                    <label for="newPin">新しい暗証番号</label>
+                    <input type="password" id="newPin" placeholder="••••" maxlength="4" pattern="[0-9]{4}"
+                        inputmode="numeric" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirmPin">新しい暗証番号（確認）</label>
+                    <input type="password" id="confirmPin" placeholder="••••" maxlength="4" pattern="[0-9]{4}"
+                        inputmode="numeric" required>
+                </div>
+                <p id="changePinError" class="error-text" style="display: none;"></p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="changePinCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">変更</button>
                 </div>
             </form>
         </div>
@@ -318,7 +352,6 @@
                 <button class="modal-close" id="messagesModalClose">×</button>
             </div>
             <div class="modal-body" id="messagesContent">
-                <!-- メッセージ一覧がJSで生成される -->
             </div>
         </div>
     </div>
@@ -339,7 +372,17 @@
                     <label for="employeeRole">役職</label>
                     <select id="employeeRole" required>
                         <option value="staff">スタッフ</option>
-                        <option value="leader">リーダー</option>
+                        <option value="shiftLeader">シフトリーダー</option>
+                        <option value="employee">社員</option>
+                        <option value="manager">マネージャー</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="employeeShiftTime">シフト時間帯</label>
+                    <select id="employeeShiftTime" required>
+                        <option value="day">日勤</option>
+                        <option value="evening">夕勤</option>
+                        <option value="night">夜勤</option>
                     </select>
                 </div>
                 <div class="modal-actions">

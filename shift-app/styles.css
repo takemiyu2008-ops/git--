@@ -1,3 +1,35 @@
+/* 接続状態表示 */
+.connection-status {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    font-size: 0.85rem;
+    z-index: 50;
+}
+
+.connection-status .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--warning);
+}
+
+.connection-status.connected .status-dot {
+    background: var(--success);
+}
+
+.connection-status.disconnected .status-dot {
+    background: var(--danger);
+}
+
 /* ========================================
    CSS変数とリセット
    ======================================== */
@@ -287,6 +319,41 @@ body {
 .admin-tab.active {
     background: var(--warning);
     color: white;
+}
+
+/* 管理者タブのバッジ */
+.admin-tab {
+    position: relative;
+}
+
+.tab-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--danger);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: badgePulse 2s infinite;
+}
+
+@keyframes badgePulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
 }
 
 .admin-content {
@@ -603,9 +670,51 @@ body {
 }
 
 .shift-bar .fixed-icon,
-.shift-bar .overnight-icon {
+.shift-bar .overnight-icon,
+.shift-bar .change-icon {
     margin-right: 4px;
     font-size: 0.7rem;
+}
+
+/* 変更履歴があるシフト */
+.shift-bar.changed {
+    border: 2px solid rgba(59, 130, 246, 0.8);
+    animation: changedPulse 2s infinite;
+}
+
+@keyframes changedPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+    }
+}
+
+/* 交代履歴があるシフト */
+.shift-bar.swapped {
+    border: 2px solid rgba(16, 185, 129, 0.8);
+    animation: swappedPulse 2s infinite;
+}
+
+.shift-bar .swap-icon {
+    margin-right: 4px;
+    font-size: 0.7rem;
+}
+
+@keyframes swappedPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+    }
 }
 
 .shift-bar .delete-btn {
@@ -962,46 +1071,156 @@ body {
    ======================================== */
 @media (max-width: 768px) {
     .app-container {
-        padding: 16px;
+        padding: 12px;
+        padding-top: 50px;
+    }
+
+    .connection-status {
+        top: 8px;
+        right: 8px;
+        padding: 6px 12px;
+        font-size: 0.75rem;
     }
 
     .header {
         flex-direction: column;
-        gap: 16px;
+        gap: 12px;
         text-align: center;
+        padding: 16px;
     }
 
     .header-title {
-        font-size: 1.5rem;
+        font-size: 1.3rem;
     }
 
     .header-actions {
         justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .header-actions .btn {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+
+    .role-toggle {
+        padding: 6px 12px;
     }
 
     .date-nav {
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 8px;
+        padding: 12px;
     }
 
     .current-period {
         min-width: auto;
         order: -1;
         width: 100%;
+        font-size: 0.95rem;
+    }
+
+    .nav-btn {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+
+    /* ガントチャート改善 */
+    .gantt-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .gantt-header {
+        min-width: 1000px;
+    }
+
+    .gantt-row {
+        min-width: 1000px;
     }
 
     .gantt-label-header,
     .gantt-date-label {
-        width: 80px;
-        min-width: 80px;
+        width: 60px;
+        min-width: 60px;
+        padding: 8px;
+        position: sticky;
+        left: 0;
+        z-index: 5;
+    }
+
+    .date-number {
+        font-size: 1.1rem;
+    }
+
+    .date-day {
+        font-size: 0.75rem;
     }
 
     .time-cell,
     .hour-cell {
-        min-width: 40px;
+        min-width: 38px;
+    }
+
+    .time-cell {
+        font-size: 0.7rem;
+        padding: 8px 2px;
+    }
+
+    .shift-bar {
+        font-size: 0.7rem;
+        padding: 0 6px;
+        min-height: 28px;
+        touch-action: manipulation;
+        cursor: pointer;
+        -webkit-tap-highlight-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .shift-bar:active {
+        transform: scale(0.98);
+        opacity: 0.9;
+    }
+
+    .shift-bar .shift-time {
+        display: none;
+    }
+
+    .shift-bar .delete-btn {
+        width: 22px;
+        height: 22px;
+        opacity: 0.8;
+    }
+
+    /* スクロール改善 */
+    .gantt-body {
+        max-height: none;
+        overflow-y: visible;
     }
 
     .modal {
-        margin: 16px;
+        margin: 8px;
+        max-height: 95vh;
+    }
+
+    .modal-body {
+        padding: 16px;
+    }
+
+    .admin-panel {
+        padding: 12px;
+    }
+
+    .admin-tabs {
+        gap: 4px;
+    }
+
+    .admin-tab {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    .legend {
+        padding: 12px;
     }
 }

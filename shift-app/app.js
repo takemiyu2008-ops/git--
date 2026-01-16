@@ -1,1151 +1,873 @@
-// ========================================
-// シフトアプリ - メインJavaScript
-// ========================================
+// Firebase設定
+const firebaseConfig = {
+    apiKey: "AIzaSyBBNxYD46f-HPoeHo0JlBqIDiZs8_E7l_k",
+    authDomain: "shift-app-956a0.firebaseapp.com",
+    databaseURL: "https://shift-app-956a0-default-rtdb.firebaseio.com",
+    projectId: "shift-app-956a0",
+    storageBucket: "shift-app-956a0.firebasestorage.app",
+    messagingSenderId: "81668991091",
+    appId: "1:81668991091:web:ccac553daf21cd3e15e206",
+    measurementId: "G-002NDWGWGL"
+};
+
+// Firebase初期化
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
 
 // 設定
-const CONFIG = {
-    ADMIN_PIN: '1234'
-};
+let CONFIG = { ADMIN_PIN: '1234' };
+
+// Firebaseから暗証番号を読み込み
+database.ref('settings/adminPin').once('value', snap => {
+    if (snap.val()) CONFIG.ADMIN_PIN = snap.val();
+});
 
 // 状態管理
 const state = {
     currentWeekStart: getWeekStart(new Date()),
-    shifts: JSON.parse(localStorage.getItem('shifts') || '[]'),
-    fixedShifts: JSON.parse(localStorage.getItem('fixedShifts') || '[]'),
-    changeRequests: JSON.parse(localStorage.getItem('changeRequests') || '[]'),
-    leaveRequests: JSON.parse(localStorage.getItem('leaveRequests') || '[]'),
-    employees: JSON.parse(localStorage.getItem('employees') || '[]'),
-    messages: JSON.parse(localStorage.getItem('messages') || '[]'),
-    swapRequests: JSON.parse(localStorage.getItem('swapRequests') || '[]'),
+    shifts: [],
+    fixedShifts: [],
+    changeRequests: [],
+    leaveRequests: [],
+    employees: [],
+    messages: [],
+    swapRequests: [],
     selectedColor: '#6366f1',
     isAdmin: false,
     activeAdminTab: 'shiftChanges',
-    editingShiftId: null
+    editingShiftId: null,
+    isConnected: false
 };
 
-// 初期従業員データ
-if (state.employees.length === 0) {
-    state.employees = [
-        { id: '1', name: '田中太郎', role: 'leader' },
-        { id: '2', name: '佐藤花子', role: 'staff' },
-        { id: '3', name: '鈴木一郎', role: 'staff' }
-    ];
-    saveData();
-}
+// 接続状態の監視
+database.ref('.info/connected').on('value', (snap) => {
+    const statusEl = document.getElementById('connectionStatus');
+    const textEl = statusEl?.querySelector('.status-text');
+    if (snap.val() === true) {
+        state.isConnected = true;
+        statusEl?.classList.remove('disconnected');
+        statusEl?.classList.add('connected');
+        if (textEl) textEl.textContent = '接続中';
+    } else {
+        state.isConnected = false;
+        statusEl?.classList.remove('connected');
+        statusEl?.classList.add('disconnected');
+        if (textEl) textEl.textContent = 'オフライン';
+    }
+});
 
 // ユーティリティ関数
 function getWeekStart(date) {
     const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day;
-    return new Date(d.setDate(diff));
+    d.setDate(d.getDate() - d.getDay());
+    return d;
 }
-
-function formatDate(date) {
-    const d = new Date(date);
-    return d.toISOString().split('T')[0];
-}
-
-function formatDateTime(dateStr) {
-    const d = new Date(dateStr);
+function formatDate(date) { return new Date(date).toISOString().split('T')[0]; }
+function formatDateTime(str) {
+    const d = new Date(str);
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
-
-function getDayName(dayIndex) {
-    const days = ['日', '月', '火', '水', '木', '金', '土'];
-    return days[dayIndex];
-}
-
+function getDayName(i) { return ['日', '月', '火', '水', '木', '金', '土'][i]; }
 function getMonthDay(date) {
     const d = new Date(date);
-    return {
-        month: d.getMonth() + 1,
-        day: d.getDate(),
-        dayOfWeek: d.getDay()
-    };
+    return { month: d.getMonth() + 1, day: d.getDate(), dayOfWeek: d.getDay() };
+}
+function getDayOfWeek(str) { return new Date(str).getDay(); }
+
+// 時刻をフォーマットするヘルパー関数（30分単位対応）
+function formatTime(val) {
+    const hours = Math.floor(val);
+    const mins = Math.round((val - hours) * 60);
+    return `${hours}:${mins.toString().padStart(2, '0')}`;
 }
 
-function getDayOfWeek(dateStr) {
-    const d = new Date(dateStr);
-    return d.getDay();
+// 日付選択時に曜日を表示
+function updateShiftDateDay() {
+    const dateInput = document.getElementById('shiftDate');
+    const dayDisplay = document.getElementById('shiftDateDay');
+    if (dateInput.value) {
+        const dow = getDayOfWeek(dateInput.value);
+        const dayNames = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
+        dayDisplay.textContent = dayNames[dow];
+        dayDisplay.style.color = dow === 0 ? '#ef4444' : dow === 6 ? '#3b82f6' : 'inherit';
+    } else {
+        dayDisplay.textContent = '';
+    }
 }
 
-// 担当者ごとの色マップを生成
-function getNameColors() {
-    const colorMap = {};
-    state.shifts.forEach(shift => {
-        if (!colorMap[shift.name]) {
-            colorMap[shift.name] = shift.color;
-        }
-    });
-    state.fixedShifts.forEach(shift => {
-        if (!colorMap[shift.name]) {
-            colorMap[shift.name] = shift.color;
-        }
-    });
-    return colorMap;
-}
-
-// 従業員セレクトの更新
-function updateEmployeeSelects() {
-    const selects = ['shiftName', 'leaveName', 'swapTargetEmployee'];
-
-    selects.forEach(id => {
-        const select = document.getElementById(id);
-        if (!select) return;
-
-        select.innerHTML = '<option value="">選択してください</option>';
-        state.employees.forEach(emp => {
-            const option = document.createElement('option');
-            option.value = emp.name;
-            option.textContent = emp.name;
-            select.appendChild(option);
+// Firebase からデータを読み込み
+function loadData() {
+    const refs = ['shifts', 'fixedShifts', 'changeRequests', 'leaveRequests', 'employees', 'messages', 'swapRequests'];
+    refs.forEach(key => {
+        database.ref(key).on('value', snap => {
+            const data = snap.val();
+            state[key] = data ? Object.values(data) : [];
+            if (key === 'employees') updateEmployeeSelects();
+            render();
+            if (state.isAdmin) renderAdminPanel();
+            updateMessageBar();
         });
     });
 }
 
-// 時間軸ヘッダーの生成
-function renderTimeHeader() {
-    const timeHeader = document.getElementById('timeHeader');
-    timeHeader.innerHTML = '';
+// Firebase にデータを保存
+function saveToFirebase(key, data) {
+    const ref = database.ref(key);
+    ref.set(data.reduce((acc, item) => { acc[item.id] = item; return acc; }, {}));
+}
 
-    for (let hour = 0; hour < 24; hour++) {
-        const cell = document.createElement('div');
-        cell.className = 'time-cell';
-        cell.textContent = `${hour}時`;
-        timeHeader.appendChild(cell);
+// 従業員セレクト更新
+function updateEmployeeSelects() {
+    ['shiftName', 'leaveName', 'swapTargetEmployee', 'changeApplicant', 'swapApplicant'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">選択してください</option>';
+        state.employees.forEach(e => {
+            const opt = document.createElement('option');
+            opt.value = e.name;
+            opt.textContent = e.name;
+            sel.appendChild(opt);
+        });
+    });
+}
+
+// 担当者色マップ
+function getNameColors() {
+    const map = {};
+    [...state.shifts, ...state.fixedShifts].forEach(s => { if (!map[s.name]) map[s.name] = s.color; });
+    return map;
+}
+
+// 時間ヘッダー
+function renderTimeHeader() {
+    const h = document.getElementById('timeHeader');
+    h.innerHTML = '';
+    for (let i = 0; i < 24; i++) {
+        const c = document.createElement('div');
+        c.className = 'time-cell';
+        c.textContent = `${i}時`;
+        h.appendChild(c);
     }
 }
 
-// シフトのレベル（縦位置）を計算
+// シフトレベル計算
 function calculateShiftLevels(shifts) {
     const levels = {};
-    const sortedShifts = [...shifts].sort((a, b) => a.startHour - b.startHour);
-
-    sortedShifts.forEach(shift => {
-        let level = 0;
-        for (const other of sortedShifts) {
-            if (other.id === shift.id) continue;
-            if (levels[other.id] === undefined) continue;
-
-            const overlaps = !(shift.endHour <= other.startHour || shift.startHour >= other.endHour);
-            if (overlaps && levels[other.id] >= level) {
-                level = levels[other.id] + 1;
-            }
+    const sorted = [...shifts].sort((a, b) => a.startHour - b.startHour);
+    sorted.forEach(s => {
+        let lvl = 0;
+        for (const o of sorted) {
+            if (o.id === s.id || levels[o.id] === undefined) continue;
+            if (!(s.endHour <= o.startHour || s.startHour >= o.endHour) && levels[o.id] >= lvl) lvl = levels[o.id] + 1;
         }
-        levels[shift.id] = level;
+        levels[s.id] = lvl;
     });
-
     return levels;
 }
 
-// ガントチャート本体の生成
+// ガントチャート
 function renderGanttBody() {
-    const ganttBody = document.getElementById('ganttBody');
-    ganttBody.innerHTML = '';
-
+    const body = document.getElementById('ganttBody');
+    body.innerHTML = '';
     for (let i = 0; i < 7; i++) {
         const date = new Date(state.currentWeekStart);
         date.setDate(date.getDate() + i);
+        const dateStr = formatDate(date);
+        const { day, dayOfWeek } = getMonthDay(date);
 
         const row = document.createElement('div');
         row.className = 'gantt-row';
-        row.dataset.date = formatDate(date);
-
-        const { day, dayOfWeek } = getMonthDay(date);
-        const dayName = getDayName(dayOfWeek);
 
         let dayClass = 'date-day';
         if (dayOfWeek === 0) dayClass += ' sunday';
         if (dayOfWeek === 6) dayClass += ' saturday';
 
-        const dateLabel = document.createElement('div');
-        dateLabel.className = 'gantt-date-label';
-        dateLabel.innerHTML = `
-            <span class="date-number">${day}</span>
-            <span class="${dayClass}">${dayName}</span>
-        `;
-        row.appendChild(dateLabel);
+        const label = document.createElement('div');
+        label.className = 'gantt-date-label';
+        label.innerHTML = `<span class="date-number">${day}</span><span class="${dayClass}">${getDayName(dayOfWeek)}</span>`;
+        row.appendChild(label);
 
         const timeline = document.createElement('div');
         timeline.className = 'gantt-timeline';
-
-        for (let hour = 0; hour < 24; hour++) {
-            const hourCell = document.createElement('div');
-            hourCell.className = 'hour-cell';
-            hourCell.dataset.hour = hour;
-            timeline.appendChild(hourCell);
+        for (let h = 0; h < 24; h++) {
+            const cell = document.createElement('div');
+            cell.className = 'hour-cell';
+            timeline.appendChild(cell);
         }
 
-        const dateStr = formatDate(date);
+        // シフト収集
         const dayShifts = state.shifts.filter(s => s.date === dateStr);
+        const prevDate = new Date(date); prevDate.setDate(prevDate.getDate() - 1);
+        const prevStr = formatDate(prevDate);
+        const overnight = state.shifts.filter(s => s.date === prevStr && s.overnight).map(s => ({
+            ...s, id: `on-${s.id}`, date: dateStr, startHour: 0, endHour: s.endHour, isOvernightContinuation: true
+        }));
+        const fixed = state.fixedShifts.filter(f => f.dayOfWeek === dayOfWeek).map(f => ({
+            ...f, id: `fx-${f.id}-${dateStr}`, date: dateStr, isFixed: true
+        }));
+        const prevDow = (dayOfWeek + 6) % 7;
+        const fixedOvernight = state.fixedShifts.filter(f => f.dayOfWeek === prevDow && f.overnight).map(f => ({
+            ...f, id: `fxo-${f.id}-${dateStr}`, date: dateStr, startHour: 0, endHour: f.endHour, isFixed: true, isOvernightContinuation: true
+        }));
 
-        // 夜勤シフト（前日から跨ぎ）を取得
-        const prevDate = new Date(date);
-        prevDate.setDate(prevDate.getDate() - 1);
-        const prevDateStr = formatDate(prevDate);
-        const overnightFromPrev = state.shifts
-            .filter(s => s.date === prevDateStr && s.overnight)
-            .map(s => ({
-                ...s,
-                id: `overnight-${s.id}`,
-                date: dateStr,
-                startHour: 0,
-                endHour: s.endHour,
-                isOvernightContinuation: true
-            }));
+        const all = [...dayShifts, ...overnight, ...fixed, ...fixedOvernight];
+        const levels = calculateShiftLevels(all);
+        const maxLvl = Math.max(0, ...Object.values(levels));
+        const baseH = 80, perLvl = 28;
+        timeline.style.minHeight = `${baseH + maxLvl * perLvl}px`;
 
-        const fixedShiftsForDay = state.fixedShifts
-            .filter(fs => fs.dayOfWeek === dayOfWeek)
-            .map(fs => ({
-                ...fs,
-                id: `fixed-${fs.id}-${dateStr}`,
-                date: dateStr,
-                isFixed: true
-            }));
+        all.forEach(s => timeline.appendChild(createShiftBar(s, levels[s.id])));
 
-        // 夜勤固定シフト（前日から跨ぎ）
-        const prevDayOfWeek = (dayOfWeek + 6) % 7;
-        const overnightFixedFromPrev = state.fixedShifts
-            .filter(fs => fs.dayOfWeek === prevDayOfWeek && fs.overnight)
-            .map(fs => ({
-                ...fs,
-                id: `fixed-overnight-${fs.id}-${dateStr}`,
-                date: dateStr,
-                startHour: 0,
-                endHour: fs.endHour,
-                isFixed: true,
-                isOvernightContinuation: true
-            }));
-
-        const allShifts = [...dayShifts, ...overnightFromPrev, ...fixedShiftsForDay, ...overnightFixedFromPrev];
-
-        const levels = calculateShiftLevels(allShifts);
-        const maxLevel = Math.max(0, ...Object.values(levels));
-
-        const baseHeight = 80;
-        const heightPerLevel = 28;
-        timeline.style.minHeight = `${baseHeight + maxLevel * heightPerLevel}px`;
-
-        allShifts.forEach(shift => {
-            const bar = createShiftBar(shift, levels[shift.id], maxLevel);
+        // 有給
+        const leaves = state.leaveRequests.filter(l => l.status === 'approved' && dateStr >= l.startDate && dateStr <= l.endDate);
+        leaves.forEach((l, idx) => {
+            const bar = document.createElement('div');
+            bar.className = 'leave-bar';
+            bar.style.top = `${baseH + (maxLvl + 1 + idx) * perLvl}px`;
+            bar.style.height = `${perLvl - 4}px`;
+            bar.textContent = `🏖️ ${l.name} 有給`;
             timeline.appendChild(bar);
-        });
-
-        const approvedLeaves = state.leaveRequests.filter(l =>
-            l.status === 'approved' &&
-            dateStr >= l.startDate && dateStr <= l.endDate
-        );
-
-        approvedLeaves.forEach((leave, idx) => {
-            const leaveBar = document.createElement('div');
-            leaveBar.className = 'leave-bar';
-            leaveBar.style.top = `${baseHeight + (maxLevel + 1 + idx) * heightPerLevel}px`;
-            leaveBar.style.height = `${heightPerLevel - 4}px`;
-            leaveBar.textContent = `🏖️ ${leave.name} 有給`;
-            timeline.appendChild(leaveBar);
-            timeline.style.minHeight = `${baseHeight + (maxLevel + 2 + idx) * heightPerLevel}px`;
+            timeline.style.minHeight = `${baseH + (maxLvl + 2 + idx) * perLvl}px`;
         });
 
         row.appendChild(timeline);
-        ganttBody.appendChild(row);
+        body.appendChild(row);
     }
 }
 
-// シフトバーの作成
-function createShiftBar(shift, level, maxLevel) {
-    const bar = document.createElement('div');
-    let className = 'shift-bar';
-    if (shift.isFixed) className += ' fixed';
-    if (shift.overnight && !shift.isOvernightContinuation) className += ' overnight';
-    bar.className = className;
-    bar.dataset.id = shift.id;
-
-    const cellWidth = 50;
-    let startHour = shift.startHour;
-    let endHour = shift.endHour;
-
-    // 夜勤の場合、当日分は開始から24時まで表示
-    if (shift.overnight && !shift.isOvernightContinuation) {
-        endHour = 24;
+// セルの実際の幅を取得する関数
+function getCellWidth() {
+    const hourCell = document.querySelector('.hour-cell');
+    if (hourCell) {
+        return hourCell.getBoundingClientRect().width;
     }
+    // デフォルト値（フォールバック）
+    return window.innerWidth <= 768 ? 38 : 50;
+}
 
-    const left = startHour * cellWidth;
-    const width = (endHour - startHour) * cellWidth;
+// タッチイベントかどうかを判定
+let touchMoved = false;
 
-    const baseTop = 8;
-    const barHeight = 24;
-    const gapBetweenBars = 4;
-    const top = baseTop + level * (barHeight + gapBetweenBars);
+// シフトバー作成
+function createShiftBar(s, lvl) {
+    const bar = document.createElement('div');
+    let cls = 'shift-bar';
+    if (s.isFixed) cls += ' fixed';
+    if (s.overnight && !s.isOvernightContinuation) cls += ' overnight';
+    bar.className = cls;
+    bar.dataset.id = s.id;
 
-    bar.style.left = `${left}px`;
-    bar.style.width = `${width}px`;
-    bar.style.top = `${top}px`;
-    bar.style.height = `${barHeight}px`;
-    bar.style.background = `linear-gradient(135deg, ${shift.color}, ${adjustColor(shift.color, -20)})`;
+    const w = getCellWidth();
+    let start = s.startHour, end = s.endHour;
+    if (s.overnight && !s.isOvernightContinuation) end = 24;
+
+    bar.style.left = `${start * w}px`;
+    bar.style.width = `${(end - start) * w}px`;
+    bar.style.top = `${8 + lvl * 28}px`;
+    bar.style.height = '24px';
+    bar.style.background = `linear-gradient(135deg, ${s.color}, ${adjustColor(s.color, -20)})`;
 
     let icons = '';
-    if (shift.isFixed) icons += '<span class="fixed-icon">🔁</span>';
-    if (shift.overnight && !shift.isOvernightContinuation) icons += '<span class="overnight-icon">🌙</span>';
-    if (shift.isOvernightContinuation) icons += '<span class="overnight-icon">→</span>';
+    if (s.changeHistory) icons += '<span class="change-icon" title="シフト変更あり">📝</span>';
+    if (s.swapHistory) icons += '<span class="swap-icon" title="シフト交代あり">🤝</span>';
+    if (s.isFixed) icons += '<span class="fixed-icon">🔁</span>';
+    if (s.overnight && !s.isOvernightContinuation) icons += '<span class="overnight-icon">🌙</span>';
+    if (s.isOvernightContinuation) icons += '<span class="overnight-icon">→</span>';
 
-    // 時間表示
-    let timeDisplay = '';
-    if (shift.overnight && !shift.isOvernightContinuation) {
-        timeDisplay = `${shift.startHour}:00-翌${shift.endHour}:00`;
-    } else if (shift.isOvernightContinuation) {
-        timeDisplay = `〜${shift.endHour}:00`;
-    } else {
-        timeDisplay = `${shift.startHour}:00-${shift.endHour}:00`;
+    let time = s.overnight && !s.isOvernightContinuation ? `${formatTime(s.startHour)}-翌${formatTime(s.endHour)}` :
+        s.isOvernightContinuation ? `〜${formatTime(s.endHour)}` : `${formatTime(s.startHour)}-${formatTime(s.endHour)}`;
+
+    // 変更履歴がある場合はツールチップに表示
+    if (s.changeHistory) {
+        const h = s.changeHistory;
+        bar.title = `変更前: ${h.previousDate} ${formatTime(h.previousStartHour)}-${formatTime(h.previousEndHour)}\n理由: ${h.reason}`;
+        bar.classList.add('changed');
     }
 
-    bar.innerHTML = `
-        ${icons}
-        <span class="shift-name">${shift.name}</span>
-        <span class="shift-time">${timeDisplay}</span>
-        <button class="delete-btn" title="削除">×</button>
-    `;
+    // 交代履歴がある場合はツールチップに表示
+    if (s.swapHistory) {
+        const h = s.swapHistory;
+        bar.title = `交代前: ${h.previousName} → 交代後: ${h.newName}`;
+        bar.classList.add('swapped');
+    }
 
-    // シフトをクリックで編集
-    bar.addEventListener('click', (e) => {
+    bar.innerHTML = `${icons}<span class="shift-name">${s.name}</span><span class="shift-time">${time}</span><button class="delete-btn">×</button>`;
+
+    // クリックイベント（デスクトップ用）
+    bar.addEventListener('click', e => {
         if (e.target.classList.contains('delete-btn')) return;
-        if (shift.isFixed || shift.isOvernightContinuation) return;
-        openEditShiftModal(shift);
+        // すべてのシフトで編集画面を開く
+        openEditShiftModal(s);
     });
 
-    bar.querySelector('.delete-btn').addEventListener('click', (e) => {
+    // タッチイベント（モバイル用）
+    bar.addEventListener('touchstart', () => {
+        touchMoved = false;
+    }, { passive: true });
+
+    bar.addEventListener('touchmove', () => {
+        touchMoved = true;
+    }, { passive: true });
+
+    bar.addEventListener('touchend', e => {
+        if (touchMoved) return;
+        if (e.target.classList.contains('delete-btn')) return;
+        e.preventDefault();
+        // すべてのシフトで編集画面を開く
+        openEditShiftModal(s);
+    });
+
+    bar.querySelector('.delete-btn').addEventListener('click', e => {
         e.stopPropagation();
-        if (shift.isFixed) {
-            const originalId = shift.id.split('-')[1];
-            deleteFixedShift(originalId);
-        } else if (!shift.isOvernightContinuation) {
-            deleteShift(shift.id);
-        }
+        if (s.isFixed) deleteFixedShift(s.id.split('-')[1]);
+        else if (!s.isOvernightContinuation) deleteShift(s.id);
     });
-
     return bar;
 }
 
-// シフト編集モーダルを開く
-function openEditShiftModal(shift) {
-    state.editingShiftId = shift.id;
-
-    document.getElementById('shiftModalTitle').textContent = 'シフト編集';
-    document.getElementById('shiftSubmitBtn').textContent = '更新';
-    document.getElementById('editShiftId').value = shift.id;
-    document.getElementById('shiftDate').value = shift.date;
-    document.getElementById('shiftName').value = shift.name;
-    document.getElementById('shiftStart').value = shift.startHour;
-    document.getElementById('shiftEnd').value = shift.endHour;
-    document.getElementById('overnightShift').checked = shift.overnight || false;
-    document.getElementById('fixedShift').checked = false;
-
-    // 色を選択
-    const colorOptions = document.querySelectorAll('.color-option');
-    colorOptions.forEach(opt => {
-        opt.classList.remove('selected');
-        if (opt.dataset.color === shift.color) {
-            opt.classList.add('selected');
-        }
-    });
-    state.selectedColor = shift.color;
-
-    openModal(document.getElementById('modalOverlay'));
+// 変更履歴モーダル表示
+function showChangeHistoryModal(s) {
+    const h = s.changeHistory;
+    const result = confirm(
+        `📝 シフト変更履歴\n\n` +
+        `【変更前】\n日付: ${h.previousDate}\n時間: ${h.previousStartHour}:00〜${h.previousEndHour}:00\n\n` +
+        `【変更後（現在）】\n日付: ${s.date}\n時間: ${s.startHour}:00〜${s.endHour}:00\n\n` +
+        `理由: ${h.reason}\n\n` +
+        `「OK」で編集画面を開きます`
+    );
+    if (result) openEditShiftModal(s);
 }
 
-// 色の調整
-function adjustColor(hex, amount) {
-    const num = parseInt(hex.slice(1), 16);
-    const r = Math.min(255, Math.max(0, (num >> 16) + amount));
-    const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
-    const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+// 交代履歴モーダル表示
+function showSwapHistoryModal(s) {
+    const h = s.swapHistory;
+    const result = confirm(
+        `🤝 シフト交代履歴\n\n` +
+        `【交代前】\n担当者: ${h.previousName}\n\n` +
+        `【交代後（現在）】\n担当者: ${h.newName}\n\n` +
+        `メッセージ: ${h.message || 'なし'}\n\n` +
+        `「OK」で編集画面を開きます`
+    );
+    if (result) openEditShiftModal(s);
+}
+
+function adjustColor(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.min(255, Math.max(0, (n >> 16) + amt));
+    const g = Math.min(255, Math.max(0, ((n >> 8) & 0xFF) + amt));
+    const b = Math.min(255, Math.max(0, (n & 0xFF) + amt));
     return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`;
 }
 
-// 凡例の更新
+// 凡例
 function renderLegend() {
-    const legendItems = document.getElementById('legendItems');
-    const nameColors = getNameColors();
-
-    if (Object.keys(nameColors).length === 0) {
-        legendItems.innerHTML = '<span style="color: var(--text-muted);">シフトを追加すると担当者が表示されます</span>';
-        return;
-    }
-
-    legendItems.innerHTML = '';
-    Object.entries(nameColors).forEach(([name, color]) => {
-        const item = document.createElement('div');
-        item.className = 'legend-item';
-        item.innerHTML = `
-            <span class="legend-color" style="background: ${color};"></span>
-            <span>${name}</span>
-        `;
-        legendItems.appendChild(item);
+    const el = document.getElementById('legendItems');
+    const colors = getNameColors();
+    if (!Object.keys(colors).length) { el.innerHTML = '<span style="color:var(--text-muted)">シフトを追加すると担当者が表示されます</span>'; return; }
+    el.innerHTML = '';
+    Object.entries(colors).forEach(([n, c]) => {
+        const d = document.createElement('div');
+        d.className = 'legend-item';
+        d.innerHTML = `<span class="legend-color" style="background:${c}"></span><span>${n}</span>`;
+        el.appendChild(d);
     });
 }
 
-// 期間表示の更新
+// 期間表示
 function updatePeriodDisplay() {
-    const periodEl = document.getElementById('currentPeriod');
-    const start = new Date(state.currentWeekStart);
-    const end = new Date(state.currentWeekStart);
-    end.setDate(end.getDate() + 6);
-
-    const startMonth = start.getMonth() + 1;
-    const startDay = start.getDate();
-    const endMonth = end.getMonth() + 1;
-    const endDay = end.getDate();
-
-    if (startMonth === endMonth) {
-        periodEl.textContent = `${start.getFullYear()}年${startMonth}月${startDay}日 〜 ${endDay}日`;
-    } else {
-        periodEl.textContent = `${start.getFullYear()}年${startMonth}月${startDay}日 〜 ${endMonth}月${endDay}日`;
-    }
+    const el = document.getElementById('currentPeriod');
+    const s = new Date(state.currentWeekStart), e = new Date(s);
+    e.setDate(e.getDate() + 6);
+    const sm = s.getMonth() + 1, sd = s.getDate(), em = e.getMonth() + 1, ed = e.getDate();
+    el.textContent = sm === em ? `${s.getFullYear()}年${sm}月${sd}日 〜 ${ed}日` : `${s.getFullYear()}年${sm}月${sd}日 〜 ${em}月${ed}日`;
 }
 
-// メッセージバー更新
+// メッセージバー
 function updateMessageBar() {
-    const unreadCount = state.messages.filter(m => !m.read).length +
-        state.swapRequests.filter(r => r.status === 'pending').length;
-    const messageBar = document.getElementById('messageBar');
-    const messageCount = document.getElementById('messageCount');
+    const cnt = state.messages.filter(m => !m.read).length + state.swapRequests.filter(r => r.status === 'pending').length;
+    const bar = document.getElementById('messageBar'), num = document.getElementById('messageCount');
+    if (cnt > 0) { bar.style.display = 'flex'; num.textContent = cnt; }
+    else bar.style.display = 'none';
+}
 
-    if (unreadCount > 0) {
-        messageBar.style.display = 'flex';
-        messageCount.textContent = unreadCount;
-    } else {
-        messageBar.style.display = 'none';
+// CRUD操作
+function addShift(d) { const s = { id: Date.now().toString(), ...d }; state.shifts.push(s); saveToFirebase('shifts', state.shifts); }
+function updateShift(id, d) { const i = state.shifts.findIndex(s => s.id === id); if (i >= 0) { state.shifts[i] = { ...state.shifts[i], ...d }; saveToFirebase('shifts', state.shifts); } }
+function addFixedShift(d) { const s = { id: Date.now().toString(), dayOfWeek: getDayOfWeek(d.date), ...d }; delete s.date; state.fixedShifts.push(s); saveToFirebase('fixedShifts', state.fixedShifts); }
+function deleteShift(id) { state.shifts = state.shifts.filter(s => s.id !== id); saveToFirebase('shifts', state.shifts); }
+function deleteFixedShift(id) { state.fixedShifts = state.fixedShifts.filter(s => s.id !== id); saveToFirebase('fixedShifts', state.fixedShifts); }
+function updateFixedShift(id, d) {
+    const i = state.fixedShifts.findIndex(s => s.id === id);
+    if (i >= 0) {
+        const updated = { ...state.fixedShifts[i], ...d, dayOfWeek: getDayOfWeek(d.date) };
+        delete updated.date;
+        state.fixedShifts[i] = updated;
+        saveToFirebase('fixedShifts', state.fixedShifts);
     }
 }
+function addChangeRequest(d) {
+    const r = { id: Date.now().toString(), status: 'pending', createdAt: new Date().toISOString(), ...d };
+    state.changeRequests.push(r);
+    saveToFirebase('changeRequests', state.changeRequests);
 
-// シフトの追加
-function addShift(shiftData) {
-    const shift = {
-        id: Date.now().toString(),
-        ...shiftData
-    };
-    state.shifts.push(shift);
-    saveData();
-    render();
-}
+    // シフトの持ち主と管理者にメッセージを送信
+    const shift = state.shifts.find(s => s.id === d.originalShiftId);
+    if (shift) {
+        const title = '🔄 シフト変更申請';
+        const content = `${d.applicant}さんからシフト変更申請がありました。\nシフト: ${shift.date} ${shift.startHour}:00-${shift.endHour}:00\n変更後: ${d.newDate} ${d.newStartHour}:00-${d.newEndHour}:00\n理由: ${d.reason}`;
 
-// シフトの更新
-function updateShift(id, shiftData) {
-    const index = state.shifts.findIndex(s => s.id === id);
-    if (index !== -1) {
-        state.shifts[index] = { ...state.shifts[index], ...shiftData };
-        saveData();
-        render();
+        // シフトの持ち主に通知（申請者と異なる場合）
+        if (shift.name !== d.applicant) {
+            state.messages.push({ id: Date.now().toString() + '_owner', to: shift.name, from: d.applicant, title, content, createdAt: new Date().toISOString(), read: false });
+        }
+
+        // 管理者に通知
+        state.messages.push({ id: Date.now().toString() + '_admin', to: '管理者', from: d.applicant, title, content, createdAt: new Date().toISOString(), read: false });
+
+        saveToFirebase('messages', state.messages);
     }
 }
+function addLeaveRequest(d) { const r = { id: Date.now().toString(), status: 'pending', createdAt: new Date().toISOString(), ...d }; state.leaveRequests.push(r); saveToFirebase('leaveRequests', state.leaveRequests); }
+function addSwapRequest(d) {
+    const r = { id: Date.now().toString(), status: 'pending', createdAt: new Date().toISOString(), ...d };
+    state.swapRequests.push(r);
+    saveToFirebase('swapRequests', state.swapRequests);
 
-// 固定シフトの追加
-function addFixedShift(shiftData) {
-    const fixedShift = {
-        id: Date.now().toString(),
-        dayOfWeek: getDayOfWeek(shiftData.date),
-        ...shiftData
-    };
-    delete fixedShift.date;
-    state.fixedShifts.push(fixedShift);
-    saveData();
-    render();
+    // 交代相手と管理者にメッセージを送信
+    const shift = state.shifts.find(s => s.id === d.shiftId);
+    if (shift) {
+        const title = '🤝 シフト交代依頼';
+        const content = `${d.applicant}さんからシフト交代依頼がありました。\nシフト: ${shift.date} ${shift.startHour}:00-${shift.endHour}:00\n現在の担当: ${shift.name}\n交代先: ${d.targetEmployee}\nメッセージ: ${d.message}`;
+
+        // 交代相手に通知
+        state.messages.push({ id: Date.now().toString() + '_target', to: d.targetEmployee, from: d.applicant, title, content, createdAt: new Date().toISOString(), read: false });
+
+        // 管理者に通知
+        state.messages.push({ id: Date.now().toString() + '_admin', to: '管理者', from: d.applicant, title, content, createdAt: new Date().toISOString(), read: false });
+
+        saveToFirebase('messages', state.messages);
+    }
 }
-
-// シフトの削除
-function deleteShift(id) {
-    state.shifts = state.shifts.filter(s => s.id !== id);
-    saveData();
-    render();
-}
-
-// 固定シフトの削除
-function deleteFixedShift(id) {
-    state.fixedShifts = state.fixedShifts.filter(s => s.id !== id);
-    saveData();
-    render();
-}
-
-// シフト変更申請の追加
-function addChangeRequest(requestData) {
-    const request = {
-        id: Date.now().toString(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        ...requestData
-    };
-    state.changeRequests.push(request);
-    saveData();
-    renderAdminPanel();
-}
-
-// 有給申請の追加
-function addLeaveRequest(requestData) {
-    const request = {
-        id: Date.now().toString(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        ...requestData
-    };
-    state.leaveRequests.push(request);
-    saveData();
-    renderAdminPanel();
-}
-
-// シフト交代依頼の追加
-function addSwapRequest(requestData) {
-    const request = {
-        id: Date.now().toString(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        ...requestData
-    };
-    state.swapRequests.push(request);
-    saveData();
-    updateMessageBar();
-}
-
-// 従業員の追加
-function addEmployee(employeeData) {
-    const employee = {
-        id: Date.now().toString(),
-        ...employeeData
-    };
-    state.employees.push(employee);
-    saveData();
-    updateEmployeeSelects();
-    renderAdminPanel();
-}
-
-// 従業員の削除
-function deleteEmployee(id) {
-    state.employees = state.employees.filter(e => e.id !== id);
-    saveData();
-    updateEmployeeSelects();
-    renderAdminPanel();
-}
-
-// 全員へメッセージ送信
+function addEmployee(d) { const e = { id: Date.now().toString(), ...d }; state.employees.push(e); saveToFirebase('employees', state.employees); }
+function deleteEmployee(id) { state.employees = state.employees.filter(e => e.id !== id); saveToFirebase('employees', state.employees); }
 function sendBroadcast(title, content) {
-    state.employees.forEach(emp => {
-        state.messages.push({
-            id: Date.now().toString() + emp.id,
-            to: emp.name,
-            from: '管理者',
-            title: title,
-            content: content,
-            createdAt: new Date().toISOString(),
-            read: false
-        });
+    state.employees.forEach(e => {
+        state.messages.push({ id: Date.now().toString() + e.id, to: e.name, from: '管理者', title, content, createdAt: new Date().toISOString(), read: false });
     });
-    saveData();
-    updateMessageBar();
+    saveToFirebase('messages', state.messages);
 }
 
-// 申請の承認
+// 承認・却下
 function approveRequest(type, id) {
     if (type === 'change') {
-        const request = state.changeRequests.find(r => r.id === id);
-        if (request) {
-            request.status = 'approved';
-            const shift = state.shifts.find(s => s.id === request.originalShiftId);
-            if (shift) {
-                shift.date = request.newDate;
-                shift.startHour = request.newStartHour;
-                shift.endHour = request.newEndHour;
+        const r = state.changeRequests.find(x => x.id === id);
+        if (r) {
+            r.status = 'approved';
+            const s = state.shifts.find(x => x.id === r.originalShiftId);
+            if (s) {
+                // 変更前の情報を保存
+                s.changeHistory = {
+                    previousDate: s.date,
+                    previousStartHour: s.startHour,
+                    previousEndHour: s.endHour,
+                    changedAt: new Date().toISOString(),
+                    reason: r.reason
+                };
+                // 新しい情報に更新
+                s.date = r.newDate;
+                s.startHour = r.newStartHour;
+                s.endHour = r.newEndHour;
             }
+            saveToFirebase('shifts', state.shifts);
+            saveToFirebase('changeRequests', state.changeRequests);
         }
     } else if (type === 'leave') {
-        const request = state.leaveRequests.find(r => r.id === id);
-        if (request) request.status = 'approved';
+        const r = state.leaveRequests.find(x => x.id === id);
+        if (r) { r.status = 'approved'; saveToFirebase('leaveRequests', state.leaveRequests); }
     } else if (type === 'swap') {
-        const request = state.swapRequests.find(r => r.id === id);
-        if (request) {
-            request.status = 'approved';
-            // シフトの担当者を交代
-            const shift = state.shifts.find(s => s.id === request.shiftId);
-            if (shift) {
-                shift.name = request.targetEmployee;
+        const r = state.swapRequests.find(x => x.id === id);
+        if (r) {
+            r.status = 'approved';
+            const s = state.shifts.find(x => x.id === r.shiftId);
+            if (s) {
+                // 交代前の情報を保存
+                s.swapHistory = {
+                    previousName: s.name,
+                    newName: r.targetEmployee,
+                    swappedAt: new Date().toISOString(),
+                    message: r.message
+                };
+                // 新しい担当者に更新
+                s.name = r.targetEmployee;
             }
+            saveToFirebase('shifts', state.shifts);
+            saveToFirebase('swapRequests', state.swapRequests);
         }
     }
-    saveData();
-    render();
-    renderAdminPanel();
-    updateMessageBar();
+    render(); renderAdminPanel(); updateMessageBar();
 }
-
-// 申請の却下
 function rejectRequest(type, id) {
-    if (type === 'change') {
-        const request = state.changeRequests.find(r => r.id === id);
-        if (request) request.status = 'rejected';
-    } else if (type === 'leave') {
-        const request = state.leaveRequests.find(r => r.id === id);
-        if (request) request.status = 'rejected';
-    } else if (type === 'swap') {
-        const request = state.swapRequests.find(r => r.id === id);
-        if (request) request.status = 'rejected';
-    }
-    saveData();
-    renderAdminPanel();
-    updateMessageBar();
+    const arr = type === 'change' ? state.changeRequests : type === 'leave' ? state.leaveRequests : state.swapRequests;
+    const r = arr.find(x => x.id === id);
+    if (r) { r.status = 'rejected'; saveToFirebase(type === 'change' ? 'changeRequests' : type === 'leave' ? 'leaveRequests' : 'swapRequests', arr); }
+    renderAdminPanel(); updateMessageBar();
 }
 
-// ローカルストレージに保存
-function saveData() {
-    localStorage.setItem('shifts', JSON.stringify(state.shifts));
-    localStorage.setItem('fixedShifts', JSON.stringify(state.fixedShifts));
-    localStorage.setItem('changeRequests', JSON.stringify(state.changeRequests));
-    localStorage.setItem('leaveRequests', JSON.stringify(state.leaveRequests));
-    localStorage.setItem('employees', JSON.stringify(state.employees));
-    localStorage.setItem('messages', JSON.stringify(state.messages));
-    localStorage.setItem('swapRequests', JSON.stringify(state.swapRequests));
-}
+// ナビ
+function goToPrevWeek() { state.currentWeekStart.setDate(state.currentWeekStart.getDate() - 7); render(); }
+function goToNextWeek() { state.currentWeekStart.setDate(state.currentWeekStart.getDate() + 7); render(); }
 
-// 前週へ
-function goToPrevWeek() {
-    state.currentWeekStart.setDate(state.currentWeekStart.getDate() - 7);
-    render();
-}
+// 認証
+function showPinModal() { document.getElementById('adminPin').value = ''; document.getElementById('pinError').style.display = 'none'; openModal(document.getElementById('pinModalOverlay')); }
+function verifyPin(p) { return p === CONFIG.ADMIN_PIN; }
+function switchToAdmin() { state.isAdmin = true; document.getElementById('roleToggle').classList.add('admin'); document.getElementById('roleText').textContent = '管理者'; document.querySelector('.role-icon').textContent = '👑'; document.getElementById('adminPanel').style.display = 'block'; renderAdminPanel(); }
+function switchToStaff() { state.isAdmin = false; document.getElementById('roleToggle').classList.remove('admin'); document.getElementById('roleText').textContent = 'スタッフ'; document.querySelector('.role-icon').textContent = '👤'; document.getElementById('adminPanel').style.display = 'none'; }
+function toggleRole() { state.isAdmin ? switchToStaff() : showPinModal(); }
 
-// 次週へ
-function goToNextWeek() {
-    state.currentWeekStart.setDate(state.currentWeekStart.getDate() + 7);
-    render();
-}
+// 管理者タブの通知バッジ更新
+function updateAdminBadges() {
+    const changeCount = state.changeRequests.filter(r => r.status === 'pending').length;
+    const swapCount = state.swapRequests.filter(r => r.status === 'pending').length;
+    const leaveCount = state.leaveRequests.filter(r => r.status === 'pending').length;
 
-// 暗証番号認証モーダル
-function showPinModal() {
-    document.getElementById('adminPin').value = '';
-    document.getElementById('pinError').style.display = 'none';
-    openModal(document.getElementById('pinModalOverlay'));
-}
+    document.querySelectorAll('.admin-tab').forEach(tab => {
+        // 既存のバッジを削除
+        const existingBadge = tab.querySelector('.tab-badge');
+        if (existingBadge) existingBadge.remove();
 
-function verifyPin(pin) {
-    return pin === CONFIG.ADMIN_PIN;
-}
+        let count = 0;
+        if (tab.dataset.tab === 'shiftChanges') count = changeCount;
+        else if (tab.dataset.tab === 'shiftSwaps') count = swapCount;
+        else if (tab.dataset.tab === 'leaveRequests') count = leaveCount;
 
-function switchToAdmin() {
-    state.isAdmin = true;
-    const roleBtn = document.getElementById('roleToggle');
-    const roleText = document.getElementById('roleText');
-    document.getElementById('adminPanel').style.display = 'block';
-    roleBtn.classList.add('admin');
-    roleText.textContent = '管理者';
-    roleBtn.querySelector('.role-icon').textContent = '👑';
-    renderAdminPanel();
-}
-
-function switchToStaff() {
-    state.isAdmin = false;
-    const roleBtn = document.getElementById('roleToggle');
-    const roleText = document.getElementById('roleText');
-    document.getElementById('adminPanel').style.display = 'none';
-    roleBtn.classList.remove('admin');
-    roleText.textContent = 'スタッフ';
-    roleBtn.querySelector('.role-icon').textContent = '👤';
-}
-
-function toggleRole() {
-    if (state.isAdmin) {
-        switchToStaff();
-    } else {
-        showPinModal();
-    }
-}
-
-// 管理者パネルの描画
-function renderAdminPanel() {
-    const adminContent = document.getElementById('adminContent');
-    adminContent.innerHTML = '';
-
-    if (state.activeAdminTab === 'shiftChanges') {
-        const requests = state.changeRequests.filter(r => r.status === 'pending');
-        if (requests.length === 0) {
-            adminContent.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 20px;">承認待ちのシフト変更申請はありません</p>';
-            return;
+        if (count > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'tab-badge';
+            badge.textContent = count;
+            tab.appendChild(badge);
         }
-        requests.forEach(request => {
-            const originalShift = state.shifts.find(s => s.id === request.originalShiftId);
-            const card = document.createElement('div');
-            card.className = 'request-card';
-            card.innerHTML = `
-                <div class="request-info">
-                    <h4>${originalShift?.name || '不明'} - シフト変更</h4>
-                    <p>変更前: ${originalShift?.date || '?'} ${originalShift?.startHour || '?'}:00-${originalShift?.endHour || '?'}:00</p>
-                    <p>変更後: ${request.newDate} ${request.newStartHour}:00-${request.newEndHour}:00</p>
-                    <p>理由: ${request.reason}</p>
-                </div>
-                <div class="request-actions">
-                    <button class="btn btn-success btn-sm" onclick="approveRequest('change', '${request.id}')">承認</button>
-                    <button class="btn btn-danger btn-sm" onclick="rejectRequest('change', '${request.id}')">却下</button>
-                </div>
-            `;
-            adminContent.appendChild(card);
-        });
-    } else if (state.activeAdminTab === 'leaveRequests') {
-        const requests = state.leaveRequests.filter(r => r.status === 'pending');
-        if (requests.length === 0) {
-            adminContent.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 20px;">承認待ちの有給申請はありません</p>';
-            return;
-        }
-        requests.forEach(request => {
-            const card = document.createElement('div');
-            card.className = 'request-card';
-            card.innerHTML = `
-                <div class="request-info">
-                    <h4>${request.name} - 有給申請</h4>
-                    <p>期間: ${request.startDate} 〜 ${request.endDate}</p>
-                    <p>理由: ${request.reason}</p>
-                </div>
-                <div class="request-actions">
-                    <button class="btn btn-success btn-sm" onclick="approveRequest('leave', '${request.id}')">承認</button>
-                    <button class="btn btn-danger btn-sm" onclick="rejectRequest('leave', '${request.id}')">却下</button>
-                </div>
-            `;
-            adminContent.appendChild(card);
-        });
-    } else if (state.activeAdminTab === 'employees') {
-        adminContent.innerHTML = `
-            <div style="margin-bottom: 16px;">
-                <button class="btn btn-primary btn-sm" onclick="openModal(document.getElementById('employeeModalOverlay'))">
-                    + 従業員追加
-                </button>
-            </div>
-            <div class="employee-list" id="employeeList"></div>
-        `;
-        const employeeList = document.getElementById('employeeList');
-        state.employees.forEach(emp => {
-            const card = document.createElement('div');
-            card.className = 'employee-card';
-            card.innerHTML = `
-                <div class="employee-info">
-                    <div class="employee-avatar">${emp.name.charAt(0)}</div>
-                    <div>
-                        <div class="employee-name">${emp.name}</div>
-                        <div class="employee-role">${emp.role === 'leader' ? 'リーダー' : 'スタッフ'}</div>
-                    </div>
-                </div>
-                <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${emp.id}')">削除</button>
-            `;
-            employeeList.appendChild(card);
-        });
-    } else if (state.activeAdminTab === 'broadcast') {
-        adminContent.innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-                <p style="margin-bottom: 16px; color: var(--text-secondary);">全従業員にメッセージを送信します</p>
-                <button class="btn btn-primary" onclick="openModal(document.getElementById('broadcastModalOverlay'))">
-                    📢 メッセージを作成
-                </button>
-            </div>
-        `;
-    }
-}
-
-// メッセージ一覧の表示
-function renderMessages() {
-    const messagesContent = document.getElementById('messagesContent');
-    const allMessages = [
-        ...state.messages.map(m => ({ ...m, type: 'message' })),
-        ...state.swapRequests.filter(r => r.status === 'pending').map(r => ({ ...r, type: 'swap' }))
-    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    if (allMessages.length === 0) {
-        messagesContent.innerHTML = '<p style="color: var(--text-muted); text-align: center;">メッセージはありません</p>';
-        return;
-    }
-
-    messagesContent.innerHTML = '';
-    allMessages.forEach(msg => {
-        const card = document.createElement('div');
-        card.className = 'message-card' + (!msg.read ? ' unread' : '');
-
-        if (msg.type === 'message') {
-            card.innerHTML = `
-                <div class="message-header">
-                    <span class="message-from">${msg.from}</span>
-                    <span class="message-date">${formatDateTime(msg.createdAt)}</span>
-                </div>
-                <div class="message-content">
-                    <strong>${msg.title}</strong><br>
-                    ${msg.content}
-                </div>
-            `;
-            card.addEventListener('click', () => {
-                msg.read = true;
-                saveData();
-                updateMessageBar();
-                renderMessages();
-            });
-        } else if (msg.type === 'swap') {
-            const shift = state.shifts.find(s => s.id === msg.shiftId);
-            card.innerHTML = `
-                <div class="message-header">
-                    <span class="message-from">🤝 シフト交代依頼</span>
-                    <span class="message-date">${formatDateTime(msg.createdAt)}</span>
-                </div>
-                <div class="message-content">
-                    <strong>${msg.fromEmployee}</strong>さんからの依頼<br>
-                    シフト: ${shift?.date || '?'} ${shift?.startHour || '?'}:00-${shift?.endHour || '?'}:00<br>
-                    ${msg.message}
-                </div>
-                <div class="message-actions">
-                    <button class="btn btn-success btn-sm" onclick="approveRequest('swap', '${msg.id}')">交代する</button>
-                    <button class="btn btn-danger btn-sm" onclick="rejectRequest('swap', '${msg.id}')">お断り</button>
-                </div>
-            `;
-        }
-        messagesContent.appendChild(card);
     });
 }
 
-// 全体のレンダリング
-function render() {
-    renderTimeHeader();
-    renderGanttBody();
-    renderLegend();
-    updatePeriodDisplay();
-    updateMessageBar();
+// 管理者パネル
+function renderAdminPanel() {
+    updateAdminBadges();
+    const c = document.getElementById('adminContent');
+    c.innerHTML = '';
+    if (state.activeAdminTab === 'shiftChanges') {
+        const reqs = state.changeRequests.filter(r => r.status === 'pending');
+        if (!reqs.length) { c.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:20px">承認待ちなし</p>'; return; }
+        reqs.forEach(r => {
+            const s = state.shifts.find(x => x.id === r.originalShiftId);
+            const card = document.createElement('div'); card.className = 'request-card';
+            card.innerHTML = `<div class="request-info"><h4>🔄 シフト変更申請</h4><p>申請者: ${r.applicant || '不明'}</p><p>対象シフト: ${s?.name || '不明'} - ${s?.date || '?'} ${s?.startHour || '?'}:00-${s?.endHour || '?'}:00</p><p>変更後: ${r.newDate} ${r.newStartHour}:00-${r.newEndHour}:00</p><p>理由: ${r.reason}</p></div><div class="request-actions"><button class="btn btn-success btn-sm" onclick="approveRequest('change','${r.id}')">承認</button><button class="btn btn-danger btn-sm" onclick="rejectRequest('change','${r.id}')">却下</button></div>`;
+            c.appendChild(card);
+        });
+    } else if (state.activeAdminTab === 'shiftSwaps') {
+        const reqs = state.swapRequests.filter(r => r.status === 'pending');
+        if (!reqs.length) { c.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:20px">承認待ちなし</p>'; return; }
+        reqs.forEach(r => {
+            const s = state.shifts.find(x => x.id === r.shiftId);
+            const card = document.createElement('div'); card.className = 'request-card';
+            card.innerHTML = `<div class="request-info"><h4>🤝 シフト交換依頼</h4><p>申請者: ${r.applicant || '不明'}</p><p>シフト: ${s?.date || '?'} ${s?.startHour || '?'}:00-${s?.endHour || '?'}:00</p><p>現在の担当: ${r.fromEmployee} → 交代先: ${r.targetEmployee}</p><p>メッセージ: ${r.message}</p></div><div class="request-actions"><button class="btn btn-success btn-sm" onclick="approveRequest('swap','${r.id}')">承認</button><button class="btn btn-danger btn-sm" onclick="rejectRequest('swap','${r.id}')">却下</button></div>`;
+            c.appendChild(card);
+        });
+    } else if (state.activeAdminTab === 'leaveRequests') {
+        const reqs = state.leaveRequests.filter(r => r.status === 'pending');
+        if (!reqs.length) { c.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:20px">承認待ちなし</p>'; return; }
+        reqs.forEach(r => {
+            const card = document.createElement('div'); card.className = 'request-card';
+            card.innerHTML = `<div class="request-info"><h4>${r.name} - 有給申請</h4><p>期間: ${r.startDate} 〜 ${r.endDate}</p><p>理由: ${r.reason}</p></div><div class="request-actions"><button class="btn btn-success btn-sm" onclick="approveRequest('leave','${r.id}')">承認</button><button class="btn btn-danger btn-sm" onclick="rejectRequest('leave','${r.id}')">却下</button></div>`;
+            c.appendChild(card);
+        });
+    } else if (state.activeAdminTab === 'employees') {
+        c.innerHTML = `<div style="margin-bottom:16px"><button class="btn btn-primary btn-sm" onclick="openModal(document.getElementById('employeeModalOverlay'))">+ 従業員追加</button></div><div class="employee-list" id="employeeList"></div>`;
+        const list = document.getElementById('employeeList');
+        const roleNames = { staff: 'スタッフ', shiftLeader: 'シフトリーダー', employee: '社員', manager: 'マネージャー', leader: 'リーダー' };
+        const shiftNames = { day: '日勤', evening: '夕勤', night: '夜勤' };
+        state.employees.forEach(e => {
+            const card = document.createElement('div'); card.className = 'employee-card';
+            const roleName = roleNames[e.role] || e.role;
+            const shiftName = shiftNames[e.shiftTime] || '';
+            card.innerHTML = `<div class="employee-info"><div class="employee-avatar">${e.name.charAt(0)}</div><div><div class="employee-name">${e.name}</div><div class="employee-role">${roleName}${shiftName ? ' / ' + shiftName : ''}</div></div></div><button class="btn btn-danger btn-sm" onclick="deleteEmployee('${e.id}')">削除</button>`;
+            list.appendChild(card);
+        });
+    } else if (state.activeAdminTab === 'broadcast') {
+        c.innerHTML = `<div style="text-align:center;padding:20px"><p style="margin-bottom:16px;color:var(--text-secondary)">全従業員にメッセージを送信</p><button class="btn btn-primary" onclick="openModal(document.getElementById('broadcastModalOverlay'))">📢 メッセージ作成</button></div>`;
+    } else if (state.activeAdminTab === 'settings') {
+        c.innerHTML = `<div style="text-align:center;padding:20px"><p style="margin-bottom:16px;color:var(--text-secondary)">管理者設定</p><button class="btn btn-primary" onclick="openModal(document.getElementById('changePinModalOverlay'))">🔑 暗証番号を変更</button></div>`;
+    }
 }
 
-// モーダル関連
-function openModal(overlay) {
-    overlay.classList.add('active');
+// メッセージ表示
+function renderMessages() {
+    const c = document.getElementById('messagesContent');
+    const all = [...state.messages.map(m => ({ ...m, type: 'message' })), ...state.swapRequests.filter(r => r.status === 'pending').map(r => ({ ...r, type: 'swap' }))].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    if (!all.length) { c.innerHTML = '<p style="color:var(--text-muted);text-align:center">メッセージなし</p>'; return; }
+    c.innerHTML = '';
+    all.forEach(m => {
+        const card = document.createElement('div'); card.className = 'message-card' + (!m.read ? ' unread' : '');
+        if (m.type === 'message') {
+            card.innerHTML = `<div class="message-header"><span class="message-from">${m.from}</span><span class="message-date">${formatDateTime(m.createdAt)}</span></div><div class="message-content"><strong>${m.title}</strong><br>${m.content}</div>`;
+            card.onclick = () => { m.read = true; saveToFirebase('messages', state.messages); updateMessageBar(); renderMessages(); };
+        } else {
+            const s = state.shifts.find(x => x.id === m.shiftId);
+            card.innerHTML = `<div class="message-header"><span class="message-from">🤝 シフト交代依頼</span><span class="message-date">${formatDateTime(m.createdAt)}</span></div><div class="message-content"><strong>${m.fromEmployee}</strong>さんからの依頼<br>シフト: ${s?.date || '?'} ${s?.startHour || '?'}:00-${s?.endHour || '?'}:00<br>${m.message}</div><div class="message-actions"><button class="btn btn-success btn-sm" onclick="approveRequest('swap','${m.id}')">交代する</button><button class="btn btn-danger btn-sm" onclick="rejectRequest('swap','${m.id}')">お断り</button></div>`;
+        }
+        c.appendChild(card);
+    });
 }
 
-function closeModal(overlay) {
-    overlay.classList.remove('active');
+function render() { renderTimeHeader(); renderGanttBody(); renderLegend(); updatePeriodDisplay(); updateMessageBar(); }
+
+// モーダル操作
+function openModal(o) { o.classList.add('active'); }
+function closeModal(o) { o.classList.remove('active'); }
+
+function openEditShiftModal(s) {
+    // 固定シフトや夜勤継続の場合、元のシフトを取得
+    let actualShift = s;
+    let actualId = s.id;
+
+    if (s.isFixed) {
+        // 固定シフトの場合（IDが fx-123-date または fxo-123-date 形式）
+        const parts = s.id.split('-');
+        const originalId = parts[1];
+        const original = state.fixedShifts.find(f => f.id === originalId);
+        if (original) {
+            actualShift = { ...original, date: s.date };
+            actualId = originalId;
+        }
+    } else if (s.isOvernightContinuation && s.id.startsWith('on-')) {
+        // 夜勤継続の場合（IDが on-123 形式）
+        const originalId = s.id.replace('on-', '');
+        const original = state.shifts.find(x => x.id === originalId);
+        if (original) {
+            actualShift = original;
+            actualId = originalId;
+        }
+    }
+
+    state.editingShiftId = actualId;
+    document.getElementById('shiftModalTitle').textContent = s.isFixed ? '固定シフト編集' : 'シフト編集';
+    document.getElementById('shiftSubmitBtn').textContent = '更新';
+    document.getElementById('editShiftId').value = actualId;
+    document.getElementById('shiftDate').value = actualShift.date || s.date;
+    updateShiftDateDay();
+    document.getElementById('shiftName').value = actualShift.name;
+    document.getElementById('shiftStart').value = actualShift.startHour;
+    document.getElementById('shiftEnd').value = actualShift.endHour;
+    document.getElementById('overnightShift').checked = actualShift.overnight || false;
+    document.getElementById('fixedShift').checked = s.isFixed || false;
+    document.querySelectorAll('.color-option').forEach(o => { o.classList.toggle('selected', o.dataset.color === actualShift.color); });
+    state.selectedColor = actualShift.color;
+    openModal(document.getElementById('modalOverlay'));
 }
 
 function openChangeModal() {
-    const select = document.getElementById('changeShiftSelect');
-    select.innerHTML = '';
-
-    if (state.shifts.length === 0) {
-        alert('変更するシフトがありません');
-        return;
-    }
-
-    state.shifts.forEach(shift => {
-        const option = document.createElement('option');
-        option.value = shift.id;
-        option.textContent = `${shift.name} - ${shift.date} ${shift.startHour}:00-${shift.endHour}:00`;
-        select.appendChild(option);
+    const sel = document.getElementById('changeShiftSelect');
+    sel.innerHTML = '<option value="">選択してください</option>';
+    state.shifts.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s.id;
+        o.textContent = `${s.name} - ${s.date} ${formatTime(s.startHour)}-${formatTime(s.endHour)}`;
+        sel.appendChild(o);
     });
-
-    const firstShift = state.shifts[0];
-    document.getElementById('changeDate').value = firstShift.date;
-    document.getElementById('changeStart').value = firstShift.startHour;
-    document.getElementById('changeEnd').value = firstShift.endHour;
-
+    document.getElementById('changeDate').value = formatDate(new Date());
+    document.getElementById('changeStart').value = 9;
+    document.getElementById('changeEnd').value = 17;
     openModal(document.getElementById('changeModalOverlay'));
 }
 
 function openSwapModal() {
-    const select = document.getElementById('swapShiftSelect');
-    select.innerHTML = '';
-
-    if (state.shifts.length === 0) {
-        alert('交代するシフトがありません');
-        return;
-    }
-
-    state.shifts.forEach(shift => {
-        const option = document.createElement('option');
-        option.value = shift.id;
-        option.textContent = `${shift.name} - ${shift.date} ${shift.startHour}:00-${shift.endHour}:00`;
-        select.appendChild(option);
+    const sel = document.getElementById('swapShiftSelect');
+    sel.innerHTML = '<option value="">選択してください</option>';
+    state.shifts.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s.id;
+        o.textContent = `${s.name} - ${s.date} ${formatTime(s.startHour)}-${formatTime(s.endHour)}`;
+        sel.appendChild(o);
     });
-
     openModal(document.getElementById('swapModalOverlay'));
 }
 
-// 時刻選択肢の生成
+// 時刻選択肢（30分単位）
 function initTimeSelects() {
-    const selects = [
-        { id: 'shiftStart', max: 23 },
-        { id: 'shiftEnd', min: 1, max: 24 },
-        { id: 'changeStart', max: 23 },
-        { id: 'changeEnd', min: 1, max: 24 }
-    ];
-
-    selects.forEach(({ id, min = 0, max }) => {
-        const select = document.getElementById(id);
-        if (!select) return;
-
-        for (let i = min; i <= max; i++) {
-            const option = document.createElement('option');
-            option.value = i;
-            option.textContent = `${i}:00`;
-            select.appendChild(option);
+    [{ id: 'shiftStart', max: 23.5 }, { id: 'shiftEnd', min: 0.5, max: 24 }, { id: 'changeStart', max: 23.5 }, { id: 'changeEnd', min: 0.5, max: 24 }].forEach(({ id, min = 0, max }) => {
+        const s = document.getElementById(id); if (!s) return;
+        for (let i = min; i <= max; i += 0.5) {
+            const o = document.createElement('option');
+            o.value = i;
+            o.textContent = formatTime(i);
+            s.appendChild(o);
         }
     });
-
     document.getElementById('shiftStart').value = 9;
     document.getElementById('shiftEnd').value = 17;
     document.getElementById('changeStart').value = 9;
     document.getElementById('changeEnd').value = 17;
 }
 
-// イベントリスナーの設定
+// イベント設定
 function initEventListeners() {
-    document.getElementById('prevWeek').addEventListener('click', goToPrevWeek);
-    document.getElementById('nextWeek').addEventListener('click', goToNextWeek);
-    document.getElementById('roleToggle').addEventListener('click', toggleRole);
+    document.getElementById('prevWeek').onclick = goToPrevWeek;
+    document.getElementById('nextWeek').onclick = goToNextWeek;
+    document.getElementById('roleToggle').onclick = toggleRole;
+    document.querySelectorAll('.admin-tab').forEach(t => t.onclick = () => { document.querySelectorAll('.admin-tab').forEach(x => x.classList.remove('active')); t.classList.add('active'); state.activeAdminTab = t.dataset.tab; renderAdminPanel(); });
 
-    document.querySelectorAll('.admin-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            state.activeAdminTab = tab.dataset.tab;
-            renderAdminPanel();
-        });
-    });
-
-    // シフト追加モーダル
-    document.getElementById('addShiftBtn').addEventListener('click', () => {
+    document.getElementById('addShiftBtn').onclick = () => {
         state.editingShiftId = null;
         document.getElementById('shiftModalTitle').textContent = 'シフト追加';
         document.getElementById('shiftSubmitBtn').textContent = '追加';
         document.getElementById('editShiftId').value = '';
         document.getElementById('shiftDate').value = formatDate(new Date());
+        updateShiftDateDay();
         document.getElementById('shiftName').value = '';
         document.getElementById('overnightShift').checked = false;
         document.getElementById('fixedShift').checked = false;
-        const colorOptions = document.querySelectorAll('.color-option');
-        colorOptions.forEach(opt => opt.classList.remove('selected'));
-        colorOptions[0].classList.add('selected');
+        document.querySelectorAll('.color-option').forEach((o, i) => o.classList.toggle('selected', i === 0));
         state.selectedColor = '#6366f1';
         openModal(document.getElementById('modalOverlay'));
-    });
+    };
 
-    document.getElementById('modalClose').addEventListener('click', () => closeModal(document.getElementById('modalOverlay')));
-    document.getElementById('cancelBtn').addEventListener('click', () => closeModal(document.getElementById('modalOverlay')));
-    document.getElementById('modalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'modalOverlay') closeModal(document.getElementById('modalOverlay'));
-    });
+    // 日付変更時に曜日を表示
+    document.getElementById('shiftDate').onchange = updateShiftDateDay;
 
-    // シフト変更申請モーダル
-    document.getElementById('requestChangeBtn').addEventListener('click', openChangeModal);
-    document.getElementById('changeModalClose').addEventListener('click', () => closeModal(document.getElementById('changeModalOverlay')));
-    document.getElementById('changeCancelBtn').addEventListener('click', () => closeModal(document.getElementById('changeModalOverlay')));
-    document.getElementById('changeModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'changeModalOverlay') closeModal(document.getElementById('changeModalOverlay'));
-    });
+    document.getElementById('modalClose').onclick = () => closeModal(document.getElementById('modalOverlay'));
+    document.getElementById('cancelBtn').onclick = () => closeModal(document.getElementById('modalOverlay'));
+    document.getElementById('modalOverlay').onclick = e => { if (e.target.id === 'modalOverlay') closeModal(document.getElementById('modalOverlay')); };
 
-    document.getElementById('changeShiftSelect').addEventListener('change', (e) => {
-        const shift = state.shifts.find(s => s.id === e.target.value);
-        if (shift) {
-            document.getElementById('changeDate').value = shift.date;
-            document.getElementById('changeStart').value = shift.startHour;
-            document.getElementById('changeEnd').value = shift.endHour;
-        }
-    });
+    document.getElementById('requestChangeBtn').onclick = openChangeModal;
+    document.getElementById('changeModalClose').onclick = () => closeModal(document.getElementById('changeModalOverlay'));
+    document.getElementById('changeCancelBtn').onclick = () => closeModal(document.getElementById('changeModalOverlay'));
+    document.getElementById('changeModalOverlay').onclick = e => { if (e.target.id === 'changeModalOverlay') closeModal(document.getElementById('changeModalOverlay')); };
+    document.getElementById('changeShiftSelect').onchange = e => { const s = state.shifts.find(x => x.id === e.target.value); if (s) { document.getElementById('changeDate').value = s.date; document.getElementById('changeStart').value = s.startHour; document.getElementById('changeEnd').value = s.endHour; } };
 
-    // シフト交代依頼モーダル
-    document.getElementById('shiftSwapBtn').addEventListener('click', openSwapModal);
-    document.getElementById('swapModalClose').addEventListener('click', () => closeModal(document.getElementById('swapModalOverlay')));
-    document.getElementById('swapCancelBtn').addEventListener('click', () => closeModal(document.getElementById('swapModalOverlay')));
-    document.getElementById('swapModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'swapModalOverlay') closeModal(document.getElementById('swapModalOverlay'));
-    });
+    document.getElementById('shiftSwapBtn').onclick = openSwapModal;
+    document.getElementById('swapModalClose').onclick = () => closeModal(document.getElementById('swapModalOverlay'));
+    document.getElementById('swapCancelBtn').onclick = () => closeModal(document.getElementById('swapModalOverlay'));
+    document.getElementById('swapModalOverlay').onclick = e => { if (e.target.id === 'swapModalOverlay') closeModal(document.getElementById('swapModalOverlay')); };
 
-    // 有給申請モーダル
-    document.getElementById('requestLeaveBtn').addEventListener('click', () => {
-        document.getElementById('leaveStartDate').value = formatDate(new Date());
-        document.getElementById('leaveEndDate').value = formatDate(new Date());
-        openModal(document.getElementById('leaveModalOverlay'));
-    });
-    document.getElementById('leaveModalClose').addEventListener('click', () => closeModal(document.getElementById('leaveModalOverlay')));
-    document.getElementById('leaveCancelBtn').addEventListener('click', () => closeModal(document.getElementById('leaveModalOverlay')));
-    document.getElementById('leaveModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'leaveModalOverlay') closeModal(document.getElementById('leaveModalOverlay'));
-    });
+    document.getElementById('requestLeaveBtn').onclick = () => { document.getElementById('leaveStartDate').value = formatDate(new Date()); document.getElementById('leaveEndDate').value = formatDate(new Date()); openModal(document.getElementById('leaveModalOverlay')); };
+    document.getElementById('leaveModalClose').onclick = () => closeModal(document.getElementById('leaveModalOverlay'));
+    document.getElementById('leaveCancelBtn').onclick = () => closeModal(document.getElementById('leaveModalOverlay'));
+    document.getElementById('leaveModalOverlay').onclick = e => { if (e.target.id === 'leaveModalOverlay') closeModal(document.getElementById('leaveModalOverlay')); };
 
-    // 暗証番号モーダル
-    document.getElementById('pinModalClose').addEventListener('click', () => closeModal(document.getElementById('pinModalOverlay')));
-    document.getElementById('pinCancelBtn').addEventListener('click', () => closeModal(document.getElementById('pinModalOverlay')));
-    document.getElementById('pinModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'pinModalOverlay') closeModal(document.getElementById('pinModalOverlay'));
-    });
+    document.getElementById('pinModalClose').onclick = () => closeModal(document.getElementById('pinModalOverlay'));
+    document.getElementById('pinCancelBtn').onclick = () => closeModal(document.getElementById('pinModalOverlay'));
+    document.getElementById('pinModalOverlay').onclick = e => { if (e.target.id === 'pinModalOverlay') closeModal(document.getElementById('pinModalOverlay')); };
+    document.getElementById('pinForm').onsubmit = e => { e.preventDefault(); if (verifyPin(document.getElementById('adminPin').value)) { closeModal(document.getElementById('pinModalOverlay')); switchToAdmin(); } else { document.getElementById('pinError').style.display = 'block'; document.getElementById('adminPin').value = ''; } };
 
-    document.getElementById('pinForm').addEventListener('submit', (e) => {
+    document.getElementById('viewMessagesBtn').onclick = () => { renderMessages(); openModal(document.getElementById('messagesModalOverlay')); };
+    document.getElementById('messagesModalClose').onclick = () => closeModal(document.getElementById('messagesModalOverlay'));
+    document.getElementById('messagesModalOverlay').onclick = e => { if (e.target.id === 'messagesModalOverlay') closeModal(document.getElementById('messagesModalOverlay')); };
+
+    document.getElementById('employeeModalClose').onclick = () => closeModal(document.getElementById('employeeModalOverlay'));
+    document.getElementById('employeeCancelBtn').onclick = () => closeModal(document.getElementById('employeeModalOverlay'));
+    document.getElementById('employeeModalOverlay').onclick = e => { if (e.target.id === 'employeeModalOverlay') closeModal(document.getElementById('employeeModalOverlay')); };
+    document.getElementById('employeeForm').onsubmit = e => { e.preventDefault(); addEmployee({ name: document.getElementById('employeeName').value.trim(), role: document.getElementById('employeeRole').value, shiftTime: document.getElementById('employeeShiftTime').value }); closeModal(document.getElementById('employeeModalOverlay')); document.getElementById('employeeForm').reset(); alert('従業員を追加しました'); };
+
+    document.getElementById('broadcastModalClose').onclick = () => closeModal(document.getElementById('broadcastModalOverlay'));
+    document.getElementById('broadcastCancelBtn').onclick = () => closeModal(document.getElementById('broadcastModalOverlay'));
+    document.getElementById('broadcastModalOverlay').onclick = e => { if (e.target.id === 'broadcastModalOverlay') closeModal(document.getElementById('broadcastModalOverlay')); };
+    document.getElementById('broadcastForm').onsubmit = e => { e.preventDefault(); sendBroadcast(document.getElementById('broadcastTitle').value.trim(), document.getElementById('broadcastMessage').value.trim()); closeModal(document.getElementById('broadcastModalOverlay')); document.getElementById('broadcastForm').reset(); alert('全従業員にメッセージを送信しました'); };
+
+    document.querySelectorAll('.color-option').forEach(o => o.onclick = () => { document.querySelectorAll('.color-option').forEach(x => x.classList.remove('selected')); o.classList.add('selected'); state.selectedColor = o.dataset.color; });
+
+    document.getElementById('shiftForm').onsubmit = e => {
         e.preventDefault();
-        const pin = document.getElementById('adminPin').value;
-        if (verifyPin(pin)) {
-            closeModal(document.getElementById('pinModalOverlay'));
-            switchToAdmin();
+        const id = document.getElementById('editShiftId').value;
+        const isFixedChecked = document.getElementById('fixedShift').checked;
+        const d = { date: document.getElementById('shiftDate').value, name: document.getElementById('shiftName').value, startHour: +document.getElementById('shiftStart').value, endHour: +document.getElementById('shiftEnd').value, color: state.selectedColor, overnight: document.getElementById('overnightShift').checked };
+        if (!d.overnight && d.startHour >= d.endHour) { alert('終了時刻は開始時刻より後に'); return; }
+        if (d.overnight && d.startHour <= d.endHour) { alert('夜勤は終了時刻を翌日の時刻に'); return; }
+
+        if (id) {
+            // 編集の場合：固定シフトか通常シフトかを判定
+            const isFixedShift = state.fixedShifts.some(s => s.id === id);
+            if (isFixedShift) {
+                updateFixedShift(id, d);
+            } else {
+                updateShift(id, d);
+            }
+        } else if (isFixedChecked) {
+            addFixedShift(d);
         } else {
-            document.getElementById('pinError').style.display = 'block';
-            document.getElementById('adminPin').value = '';
+            addShift(d);
         }
-    });
-
-    // メッセージモーダル
-    document.getElementById('viewMessagesBtn').addEventListener('click', () => {
-        renderMessages();
-        openModal(document.getElementById('messagesModalOverlay'));
-    });
-    document.getElementById('messagesModalClose').addEventListener('click', () => closeModal(document.getElementById('messagesModalOverlay')));
-    document.getElementById('messagesModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'messagesModalOverlay') closeModal(document.getElementById('messagesModalOverlay'));
-    });
-
-    // 従業員追加モーダル
-    document.getElementById('employeeModalClose').addEventListener('click', () => closeModal(document.getElementById('employeeModalOverlay')));
-    document.getElementById('employeeCancelBtn').addEventListener('click', () => closeModal(document.getElementById('employeeModalOverlay')));
-    document.getElementById('employeeModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'employeeModalOverlay') closeModal(document.getElementById('employeeModalOverlay'));
-    });
-
-    document.getElementById('employeeForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = document.getElementById('employeeName').value.trim();
-        const role = document.getElementById('employeeRole').value;
-        addEmployee({ name, role });
-        closeModal(document.getElementById('employeeModalOverlay'));
-        document.getElementById('employeeForm').reset();
-        alert('従業員を追加しました');
-    });
-
-    // 全員へ通知モーダル
-    document.getElementById('broadcastModalClose').addEventListener('click', () => closeModal(document.getElementById('broadcastModalOverlay')));
-    document.getElementById('broadcastCancelBtn').addEventListener('click', () => closeModal(document.getElementById('broadcastModalOverlay')));
-    document.getElementById('broadcastModalOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'broadcastModalOverlay') closeModal(document.getElementById('broadcastModalOverlay'));
-    });
-
-    document.getElementById('broadcastForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const title = document.getElementById('broadcastTitle').value.trim();
-        const message = document.getElementById('broadcastMessage').value.trim();
-        sendBroadcast(title, message);
-        closeModal(document.getElementById('broadcastModalOverlay'));
-        document.getElementById('broadcastForm').reset();
-        alert('全従業員にメッセージを送信しました');
-    });
-
-    // 色選択
-    document.querySelectorAll('.color-option').forEach(option => {
-        option.addEventListener('click', () => {
-            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
-            option.classList.add('selected');
-            state.selectedColor = option.dataset.color;
-        });
-    });
-
-    // シフト追加/編集フォーム
-    document.getElementById('shiftForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const editId = document.getElementById('editShiftId').value;
-        const date = document.getElementById('shiftDate').value;
-        const name = document.getElementById('shiftName').value;
-        const startHour = parseInt(document.getElementById('shiftStart').value);
-        const endHour = parseInt(document.getElementById('shiftEnd').value);
-        const color = state.selectedColor;
-        const isFixed = document.getElementById('fixedShift').checked;
-        const overnight = document.getElementById('overnightShift').checked;
-
-        // 夜勤の場合は終了時刻が開始時刻より前でもOK
-        if (!overnight && startHour >= endHour) {
-            alert('終了時刻は開始時刻より後にしてください');
-            return;
-        }
-
-        if (overnight && startHour <= endHour) {
-            alert('夜勤の場合、終了時刻は翌日の時刻（開始より小さい値）にしてください');
-            return;
-        }
-
-        const shiftData = { date, name, startHour, endHour, color, overnight };
-
-        if (editId) {
-            updateShift(editId, shiftData);
-        } else if (isFixed) {
-            addFixedShift(shiftData);
-        } else {
-            addShift(shiftData);
-        }
-
         closeModal(document.getElementById('modalOverlay'));
         document.getElementById('shiftForm').reset();
-    });
+    };
 
-    // シフト変更申請フォーム
-    document.getElementById('changeForm').addEventListener('submit', (e) => {
+    document.getElementById('changeForm').onsubmit = e => {
         e.preventDefault();
-        const originalShiftId = document.getElementById('changeShiftSelect').value;
-        const newDate = document.getElementById('changeDate').value;
-        const newStartHour = parseInt(document.getElementById('changeStart').value);
-        const newEndHour = parseInt(document.getElementById('changeEnd').value);
-        const reason = document.getElementById('changeReason').value.trim();
-
-        if (newStartHour >= newEndHour) {
-            alert('終了時刻は開始時刻より後にしてください');
-            return;
-        }
-
-        addChangeRequest({ originalShiftId, newDate, newStartHour, newEndHour, reason });
+        const applicant = document.getElementById('changeApplicant').value;
+        const d = { applicant, originalShiftId: document.getElementById('changeShiftSelect').value, newDate: document.getElementById('changeDate').value, newStartHour: +document.getElementById('changeStart').value, newEndHour: +document.getElementById('changeEnd').value, reason: document.getElementById('changeReason').value.trim() };
+        if (d.newStartHour >= d.newEndHour) { alert('終了時刻は開始時刻より後に'); return; }
+        addChangeRequest(d);
         closeModal(document.getElementById('changeModalOverlay'));
         document.getElementById('changeForm').reset();
         alert('シフト変更申請を送信しました');
-    });
+    };
 
-    // シフト交代依頼フォーム
-    document.getElementById('swapForm').addEventListener('submit', (e) => {
+    document.getElementById('swapForm').onsubmit = e => {
         e.preventDefault();
-        const shiftId = document.getElementById('swapShiftSelect').value;
-        const shift = state.shifts.find(s => s.id === shiftId);
-        const targetEmployee = document.getElementById('swapTargetEmployee').value;
-        const message = document.getElementById('swapMessage').value.trim();
-
-        addSwapRequest({
-            shiftId,
-            fromEmployee: shift.name,
-            targetEmployee,
-            message
-        });
-
+        const applicant = document.getElementById('swapApplicant').value;
+        const sid = document.getElementById('swapShiftSelect').value;
+        const s = state.shifts.find(x => x.id === sid);
+        addSwapRequest({ applicant, shiftId: sid, fromEmployee: s.name, targetEmployee: document.getElementById('swapTargetEmployee').value, message: document.getElementById('swapMessage').value.trim() });
         closeModal(document.getElementById('swapModalOverlay'));
         document.getElementById('swapForm').reset();
         alert('シフト交代依頼を送信しました');
-    });
+    };
 
-    // 有給申請フォーム
-    document.getElementById('leaveForm').addEventListener('submit', (e) => {
+    document.getElementById('leaveForm').onsubmit = e => {
         e.preventDefault();
-        const name = document.getElementById('leaveName').value;
-        const startDate = document.getElementById('leaveStartDate').value;
-        const endDate = document.getElementById('leaveEndDate').value;
-        const reason = document.getElementById('leaveReason').value.trim();
-
-        if (startDate > endDate) {
-            alert('終了日は開始日以降にしてください');
-            return;
-        }
-
-        addLeaveRequest({ name, startDate, endDate, reason });
+        const d = { name: document.getElementById('leaveName').value, startDate: document.getElementById('leaveStartDate').value, endDate: document.getElementById('leaveEndDate').value, reason: document.getElementById('leaveReason').value.trim() };
+        if (d.startDate > d.endDate) { alert('終了日は開始日以降に'); return; }
+        addLeaveRequest(d);
         closeModal(document.getElementById('leaveModalOverlay'));
         document.getElementById('leaveForm').reset();
         alert('有給申請を送信しました');
-    });
+    };
 
-    // キーボードショートカット
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            document.querySelectorAll('.modal-overlay').forEach(m => closeModal(m));
-        }
-    });
+    document.onkeydown = e => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => closeModal(m)); };
+
+    // 暗証番号変更モーダル
+    document.getElementById('changePinModalClose').onclick = () => closeModal(document.getElementById('changePinModalOverlay'));
+    document.getElementById('changePinCancelBtn').onclick = () => closeModal(document.getElementById('changePinModalOverlay'));
+    document.getElementById('changePinModalOverlay').onclick = e => { if (e.target.id === 'changePinModalOverlay') closeModal(document.getElementById('changePinModalOverlay')); };
+    document.getElementById('changePinForm').onsubmit = e => {
+        e.preventDefault();
+        const current = document.getElementById('currentPin').value;
+        const newPin = document.getElementById('newPin').value;
+        const confirm = document.getElementById('confirmPin').value;
+        const errEl = document.getElementById('changePinError');
+        if (current !== CONFIG.ADMIN_PIN) { errEl.textContent = '現在の暗証番号が違います'; errEl.style.display = 'block'; return; }
+        if (newPin !== confirm) { errEl.textContent = '新しい暗証番号が一致しません'; errEl.style.display = 'block'; return; }
+        if (newPin.length !== 4) { errEl.textContent = '暗証番号は4桁で入力してください'; errEl.style.display = 'block'; return; }
+        CONFIG.ADMIN_PIN = newPin;
+        database.ref('settings/adminPin').set(newPin);
+        closeModal(document.getElementById('changePinModalOverlay'));
+        document.getElementById('changePinForm').reset();
+        errEl.style.display = 'none';
+        alert('暗証番号を変更しました');
+    };
 }
 
 // 初期化
 function init() {
     initTimeSelects();
-    updateEmployeeSelects();
     initEventListeners();
+    loadData();
     render();
+
+    // ウィンドウリサイズ時にシフトバーを再描画
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => render(), 100);
+    });
 }
 
 document.addEventListener('DOMContentLoaded', init);
