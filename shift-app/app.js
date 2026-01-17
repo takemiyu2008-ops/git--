@@ -36,7 +36,9 @@ const state = {
     isAdmin: false,
     activeAdminTab: 'shiftChanges',
     editingShiftId: null,
-    isConnected: false
+    isConnected: false,
+    zoomLevel: 100,
+    currentPopoverShift: null
 };
 
 // 接続状態の監視
@@ -248,7 +250,7 @@ function getCellWidth() {
 // タッチイベントかどうかを判定
 let touchMoved = false;
 
-// シフトバー作成
+// シフトバー作成（パーセントベースで位置計算）
 function createShiftBar(s, lvl) {
     const bar = document.createElement('div');
     let cls = 'shift-bar';
@@ -257,12 +259,15 @@ function createShiftBar(s, lvl) {
     bar.className = cls;
     bar.dataset.id = s.id;
 
-    const w = getCellWidth();
+    // パーセントベースで位置を計算（24時間 = 100%）
     let start = s.startHour, end = s.endHour;
     if (s.overnight && !s.isOvernightContinuation) end = 24;
 
-    bar.style.left = `${start * w}px`;
-    bar.style.width = `${(end - start) * w}px`;
+    const leftPercent = (start / 24) * 100;
+    const widthPercent = ((end - start) / 24) * 100;
+
+    bar.style.left = `${leftPercent}%`;
+    bar.style.width = `${widthPercent}%`;
     bar.style.top = `${8 + lvl * 28}px`;
     bar.style.height = '24px';
     bar.style.background = `linear-gradient(135deg, ${s.color}, ${adjustColor(s.color, -20)})`;
@@ -293,36 +298,200 @@ function createShiftBar(s, lvl) {
 
     bar.innerHTML = `${icons}<span class="shift-name">${s.name}</span><span class="shift-time">${time}</span><button class="delete-btn">×</button>`;
 
+    // タッチ位置を保存するための変数
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+
     // クリックイベント（デスクトップ用）
     bar.addEventListener('click', e => {
         if (e.target.classList.contains('delete-btn')) return;
-        // すべてのシフトで編集画面を開く
-        openEditShiftModal(s);
+        // ポップオーバーを表示
+        showShiftPopover(s, e, bar);
     });
 
     // タッチイベント（モバイル用）
-    bar.addEventListener('touchstart', () => {
+    bar.addEventListener('touchstart', (e) => {
         touchMoved = false;
+        touchStartTime = Date.now();
+        if (e.touches.length === 1) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }
+        // イベントの伝播を停止してピンチズームとの競合を防ぐ
+        e.stopPropagation();
     }, { passive: true });
 
-    bar.addEventListener('touchmove', () => {
-        touchMoved = true;
+    bar.addEventListener('touchmove', (e) => {
+        // 少しでも動いたらスクロールとみなす
+        if (e.touches.length === 1) {
+            const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+            const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+            if (deltaX > 10 || deltaY > 10) {
+                touchMoved = true;
+            }
+        }
     }, { passive: true });
 
-    bar.addEventListener('touchend', e => {
-        if (touchMoved) return;
-        if (e.target.classList.contains('delete-btn')) return;
+    bar.addEventListener('touchend', (e) => {
+        // タップ判定：動きが少なく、短い時間
+        const touchDuration = Date.now() - touchStartTime;
+        if (touchMoved || touchDuration > 500) return;
+
+        // 削除ボタンのタップは除外
+        const touch = e.changedTouches[0];
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (element && element.classList.contains('delete-btn')) return;
+
         e.preventDefault();
-        // すべてのシフトで編集画面を開く
-        openEditShiftModal(s);
-    });
+        e.stopPropagation();
 
-    bar.querySelector('.delete-btn').addEventListener('click', e => {
+        // ポップオーバーを表示（タッチ位置を使用）
+        showShiftPopover(s, {
+            clientX: touchStartX,
+            clientY: touchStartY,
+            target: bar
+        }, bar);
+    }, { passive: false });
+
+    // 削除ボタン
+    const deleteBtn = bar.querySelector('.delete-btn');
+    deleteBtn.addEventListener('click', e => {
         e.stopPropagation();
         if (s.isFixed) deleteFixedShift(s.id.split('-')[1]);
         else if (!s.isOvernightContinuation) deleteShift(s.id);
     });
+
+    // 削除ボタンのタッチイベント
+    deleteBtn.addEventListener('touchend', e => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (s.isFixed) deleteFixedShift(s.id.split('-')[1]);
+        else if (!s.isOvernightContinuation) deleteShift(s.id);
+    }, { passive: false });
+
     return bar;
+}
+
+// シフト詳細ポップオーバーを表示
+function showShiftPopover(s, event, barElement = null) {
+    const popover = document.getElementById('shiftPopover');
+
+    // シフト情報を取得（固定シフトや夜勤継続の場合は元のシフトを取得）
+    let displayShift = s;
+    if (s.isFixed) {
+        const parts = s.id.split('-');
+        const originalId = parts[1];
+        const original = state.fixedShifts.find(f => f.id === originalId);
+        if (original) {
+            displayShift = { ...original, date: s.date, isFixed: true };
+        }
+    } else if (s.isOvernightContinuation && s.id.startsWith('on-')) {
+        const originalId = s.id.replace('on-', '');
+        const original = state.shifts.find(x => x.id === originalId);
+        if (original) {
+            displayShift = original;
+        }
+    }
+
+    state.currentPopoverShift = s;
+
+    // ポップオーバーの内容を更新
+    document.getElementById('popoverName').textContent = displayShift.name;
+
+    // 日付表示
+    const dateObj = new Date(displayShift.date || s.date);
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+    const dateStr = `${dateObj.getMonth() + 1}月${dateObj.getDate()}日（${dayNames[dateObj.getDay()]}）`;
+    document.getElementById('popoverDate').textContent = dateStr;
+
+    // 時間表示
+    let timeStr;
+    if (displayShift.overnight && !s.isOvernightContinuation) {
+        timeStr = `${formatTime(displayShift.startHour)} 〜 翌${formatTime(displayShift.endHour)}`;
+    } else if (s.isOvernightContinuation) {
+        timeStr = `0:00 〜 ${formatTime(displayShift.endHour)}（前日からの継続）`;
+    } else {
+        timeStr = `${formatTime(displayShift.startHour)} 〜 ${formatTime(displayShift.endHour)}`;
+    }
+    document.getElementById('popoverTime').textContent = timeStr;
+
+    // タイプ表示
+    document.getElementById('popoverOvernightRow').style.display =
+        (displayShift.overnight && !s.isOvernightContinuation) ? 'flex' : 'none';
+    document.getElementById('popoverFixedRow').style.display = s.isFixed ? 'flex' : 'none';
+
+    // 変更履歴表示
+    if (displayShift.changeHistory) {
+        document.getElementById('popoverChangeRow').style.display = 'flex';
+        const h = displayShift.changeHistory;
+        document.getElementById('popoverChangeInfo').textContent =
+            `${h.previousDate} ${formatTime(h.previousStartHour)}-${formatTime(h.previousEndHour)}から変更`;
+    } else {
+        document.getElementById('popoverChangeRow').style.display = 'none';
+    }
+
+    // 交代履歴表示
+    if (displayShift.swapHistory) {
+        document.getElementById('popoverSwapRow').style.display = 'flex';
+        const h = displayShift.swapHistory;
+        document.getElementById('popoverSwapInfo').textContent = `${h.previousName} → ${h.newName}`;
+    } else {
+        document.getElementById('popoverSwapRow').style.display = 'none';
+    }
+
+    // ポップオーバーの位置を計算
+    // バー要素を取得（直接渡されたか、イベントから取得）
+    let bar = barElement;
+    if (!bar && event && event.target) {
+        bar = event.target.closest ? event.target.closest('.shift-bar') : event.target;
+    }
+
+    const popoverWidth = 300;
+    const popoverHeight = 280;
+    let left, top;
+
+    if (bar && bar.getBoundingClientRect) {
+        const rect = bar.getBoundingClientRect();
+        left = rect.left + (rect.width / 2) - (popoverWidth / 2);
+        top = rect.bottom + 10;
+
+        // 画面からはみ出さないように調整
+        if (top + popoverHeight > window.innerHeight - 10) {
+            top = rect.top - popoverHeight - 10;
+        }
+    } else if (event && (event.clientX !== undefined)) {
+        // タッチイベントの場合、タッチ位置を基準に配置
+        left = event.clientX - (popoverWidth / 2);
+        top = event.clientY + 20;
+    } else {
+        // フォールバック：画面中央
+        left = (window.innerWidth - popoverWidth) / 2;
+        top = (window.innerHeight - popoverHeight) / 2;
+    }
+
+    // 左右のはみ出し調整
+    if (left < 10) left = 10;
+    if (left + popoverWidth > window.innerWidth - 10) {
+        left = window.innerWidth - popoverWidth - 10;
+    }
+
+    // 上下のはみ出し調整
+    if (top < 10) top = 10;
+    if (top + popoverHeight > window.innerHeight - 10) {
+        top = window.innerHeight - popoverHeight - 10;
+    }
+
+    popover.style.left = `${left}px`;
+    popover.style.top = `${top}px`;
+    popover.classList.add('active');
+}
+
+// ポップオーバーを閉じる
+function closeShiftPopover() {
+    const popover = document.getElementById('shiftPopover');
+    popover.classList.remove('active');
+    state.currentPopoverShift = null;
 }
 
 // 変更履歴モーダル表示
@@ -855,10 +1024,315 @@ function initEventListeners() {
     };
 }
 
+// ========================================
+// ズーム機能
+// ========================================
+function setZoom(level) {
+    // 50% - 150% の範囲に制限
+    state.zoomLevel = Math.min(150, Math.max(50, level));
+    applyZoom();
+
+    // UI更新
+    const slider = document.getElementById('zoomSlider');
+    const value = document.getElementById('zoomValue');
+    if (slider) slider.value = state.zoomLevel;
+    if (value) value.textContent = `${state.zoomLevel}%`;
+}
+
+function applyZoom() {
+    const ganttContainer = document.querySelector('.gantt-container');
+    if (!ganttContainer) return;
+
+    const scale = state.zoomLevel / 100;
+
+    // ガントチャートのセル幅を調整
+    const timeCells = document.querySelectorAll('.time-cell');
+    const hourCells = document.querySelectorAll('.hour-cell');
+
+    const baseWidth = window.innerWidth <= 768 ? 38 : 50;
+    const newWidth = Math.round(baseWidth * scale);
+
+    timeCells.forEach(cell => {
+        cell.style.minWidth = `${newWidth}px`;
+    });
+
+    hourCells.forEach(cell => {
+        cell.style.minWidth = `${newWidth}px`;
+    });
+
+    // ヘッダーと行の最小幅を更新
+    const minWidth = Math.round((window.innerWidth <= 768 ? 60 : 120) + (newWidth * 24));
+    const ganttHeader = document.querySelector('.gantt-header');
+    const ganttRows = document.querySelectorAll('.gantt-row');
+
+    if (ganttHeader) ganttHeader.style.minWidth = `${minWidth}px`;
+    ganttRows.forEach(row => {
+        row.style.minWidth = `${minWidth}px`;
+    });
+}
+
+function initZoomControls() {
+    const zoomIn = document.getElementById('zoomIn');
+    const zoomOut = document.getElementById('zoomOut');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomReset = document.getElementById('zoomReset');
+
+    if (zoomIn) {
+        zoomIn.onclick = () => setZoom(state.zoomLevel + 10);
+    }
+
+    if (zoomOut) {
+        zoomOut.onclick = () => setZoom(state.zoomLevel - 10);
+    }
+
+    if (zoomSlider) {
+        zoomSlider.oninput = (e) => setZoom(parseInt(e.target.value));
+    }
+
+    if (zoomReset) {
+        zoomReset.onclick = () => setZoom(100);
+    }
+
+    // ピンチジェスチャー対応（モバイル）
+    let lastTouchDistance = 0;
+    let isPinching = false;
+    const ganttContainer = document.querySelector('.gantt-container');
+
+    if (ganttContainer) {
+        // タッチ開始時
+        ganttContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                isPinching = true;
+                lastTouchDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                // 2本指タッチの場合はデフォルト動作を防止
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        // タッチ移動時（ピンチズーム）
+        ganttContainer.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2 && isPinching) {
+                // ブラウザのデフォルトピンチズームを防止
+                e.preventDefault();
+
+                const currentDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+
+                if (lastTouchDistance > 0) {
+                    const delta = (currentDistance - lastTouchDistance) / 3;
+                    setZoom(state.zoomLevel + delta);
+                }
+
+                lastTouchDistance = currentDistance;
+            }
+        }, { passive: false });
+
+        // タッチ終了時
+        ganttContainer.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2) {
+                isPinching = false;
+                lastTouchDistance = 0;
+            }
+        }, { passive: true });
+    }
+}
+
+// ========================================
+// PDF出力・印刷機能
+// ========================================
+function exportToPdf() {
+    const element = document.querySelector('.app-container');
+    if (!element) return;
+
+    // PDF出力中のローディング表示
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'pdf-loading-overlay';
+    loadingOverlay.innerHTML = `
+        <div class="pdf-loading-content">
+            <div class="pdf-loading-spinner"></div>
+            <p>PDFを生成中...</p>
+        </div>
+    `;
+    loadingOverlay.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        color: white;
+        font-size: 1.2rem;
+    `;
+    document.body.appendChild(loadingOverlay);
+
+    // PDF出力用のクラスを追加
+    document.body.classList.add('pdf-export-mode');
+
+    // 期間情報を取得
+    const periodText = document.getElementById('currentPeriod')?.textContent || 'シフト表';
+    const fileName = `シフト表_${periodText.replace(/\s/g, '_')}.pdf`;
+
+    // html2pdf のオプション
+    const opt = {
+        margin: [10, 10, 10, 10],
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+            scale: 2,
+            useCORS: true,
+            letterRendering: true,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: 1200
+        },
+        jsPDF: {
+            unit: 'mm',
+            format: 'a4',
+            orientation: 'landscape'
+        },
+        pagebreak: { mode: 'avoid-all' }
+    };
+
+    // PDF生成
+    html2pdf().set(opt).from(element).save().then(() => {
+        // クラスを削除
+        document.body.classList.remove('pdf-export-mode');
+        // ローディング削除
+        loadingOverlay.remove();
+    }).catch(err => {
+        console.error('PDF生成エラー:', err);
+        document.body.classList.remove('pdf-export-mode');
+        loadingOverlay.remove();
+        alert('PDFの生成に失敗しました。もう一度お試しください。');
+    });
+}
+
+function printShiftTable() {
+    window.print();
+}
+
+function initPdfExport() {
+    const exportBtn = document.getElementById('exportPdfBtn');
+    const printBtn = document.getElementById('printBtn');
+
+    if (exportBtn) {
+        exportBtn.onclick = exportToPdf;
+    }
+
+    if (printBtn) {
+        printBtn.onclick = printShiftTable;
+    }
+}
+
+// ========================================
+// ポップオーバーイベントリスナー
+// ========================================
+function initPopoverEvents() {
+    const popover = document.getElementById('shiftPopover');
+    const closeBtn = document.getElementById('popoverClose');
+    const editBtn = document.getElementById('popoverEditBtn');
+    const deleteBtn = document.getElementById('popoverDeleteBtn');
+
+    // 閉じるボタン
+    if (closeBtn) {
+        closeBtn.onclick = closeShiftPopover;
+        closeBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeShiftPopover();
+        }, { passive: false });
+    }
+
+    // 編集ボタン
+    const handleEdit = () => {
+        if (state.currentPopoverShift) {
+            const shift = state.currentPopoverShift;
+            closeShiftPopover();
+            // 少し遅延を入れてポップオーバーが閉じてから開く
+            setTimeout(() => {
+                openEditShiftModal(shift);
+            }, 100);
+        }
+    };
+
+    if (editBtn) {
+        editBtn.onclick = handleEdit;
+        editBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleEdit();
+        }, { passive: false });
+    }
+
+    // 削除ボタン
+    const handleDelete = () => {
+        if (state.currentPopoverShift) {
+            const s = state.currentPopoverShift;
+            closeShiftPopover();
+            // 少し遅延を入れてから確認ダイアログを表示
+            setTimeout(() => {
+                if (confirm('このシフトを削除しますか？')) {
+                    if (s.isFixed) {
+                        const parts = s.id.split('-');
+                        deleteFixedShift(parts[1]);
+                    } else if (!s.isOvernightContinuation) {
+                        deleteShift(s.id);
+                    }
+                }
+            }, 100);
+        }
+    };
+
+    if (deleteBtn) {
+        deleteBtn.onclick = handleDelete;
+        deleteBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleDelete();
+        }, { passive: false });
+    }
+
+    // 外側クリック/タッチで閉じる
+    const handleOutsideInteraction = (e) => {
+        if (popover && popover.classList.contains('active')) {
+            // タッチイベントの場合は位置から要素を取得
+            let targetElement = e.target;
+            if (e.type === 'touchend' && e.changedTouches && e.changedTouches[0]) {
+                const touch = e.changedTouches[0];
+                targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+            }
+
+            if (targetElement && !popover.contains(targetElement) && !targetElement.closest('.shift-bar')) {
+                closeShiftPopover();
+            }
+        }
+    };
+
+    document.addEventListener('click', handleOutsideInteraction);
+    document.addEventListener('touchend', handleOutsideInteraction, { passive: true });
+
+
+    // Escapeキーで閉じる
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && popover && popover.classList.contains('active')) {
+            closeShiftPopover();
+        }
+    });
+}
+
 // 初期化
 function init() {
     initTimeSelects();
     initEventListeners();
+    initZoomControls();
+    initPdfExport();
+    initPopoverEvents();
     loadData();
     render();
 
@@ -866,7 +1340,10 @@ function init() {
     let resizeTimeout;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => render(), 100);
+        resizeTimeout = setTimeout(() => {
+            render();
+            applyZoom();
+        }, 100);
     });
 }
 

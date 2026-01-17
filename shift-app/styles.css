@@ -510,6 +510,8 @@ body {
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-lg);
+    /* ブラウザのダブルタップズームとピンチズームを無効化し、タップとスクロールは許可 */
+    touch-action: manipulation;
 }
 
 .gantt-header {
@@ -640,6 +642,11 @@ body {
     white-space: nowrap;
     text-overflow: ellipsis;
     z-index: 5;
+    /* モバイルでのタップを確実に検出 */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .shift-bar:hover {
@@ -1222,5 +1229,459 @@ body {
 
     .legend {
         padding: 12px;
+    }
+}
+
+/* ========================================
+   ズームコントロール
+   ======================================== */
+.zoom-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px 20px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.zoom-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.zoom-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.zoom-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zoom-btn:hover {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.zoom-slider {
+    width: 120px;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+}
+
+.zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.zoom-slider::-webkit-slider-thumb:hover {
+    background: var(--accent-secondary);
+}
+
+.zoom-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
+.zoom-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    min-width: 45px;
+    text-align: center;
+}
+
+.pdf-section {
+    display: flex;
+    gap: 8px;
+}
+
+/* ========================================
+   シフト詳細ポップオーバー
+   ======================================== */
+.shift-popover {
+    position: fixed;
+    z-index: 200;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--transition-fast);
+    pointer-events: none;
+}
+
+.shift-popover.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.popover-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg), 0 0 40px rgba(99, 102, 241, 0.2);
+    min-width: 280px;
+    max-width: 350px;
+    animation: popoverSlide 0.2s ease;
+}
+
+@keyframes popoverSlide {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.popover-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.popover-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.popover-close {
+    width: 24px;
+    height: 24px;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.popover-close:hover {
+    background: var(--danger);
+    color: white;
+}
+
+.popover-body {
+    padding: 16px;
+}
+
+.popover-info {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.info-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.info-value {
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.overnight-badge {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--warning);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+}
+
+.fixed-badge {
+    background: rgba(99, 102, 241, 0.2);
+    color: var(--accent-primary);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+}
+
+.popover-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.popover-actions .btn {
+    flex: 1;
+    /* モバイルでのタップを確実に検出 */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(99, 102, 241, 0.3);
+    min-height: 44px;
+    /* Apple推奨の最小タッチターゲットサイズ */
+}
+
+/* ========================================
+   印刷用スタイル
+   ======================================== */
+@media print {
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+
+    body {
+        background: white !important;
+        color: #1a1a1a !important;
+        font-size: 10pt;
+    }
+
+    .app-container {
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    /* 印刷時に非表示にする要素 */
+    .connection-status,
+    .header-actions,
+    .role-toggle,
+    .date-nav .nav-btn,
+    .zoom-controls,
+    .admin-panel,
+    .message-bar,
+    .shift-bar .delete-btn,
+    .shift-popover,
+    .modal-overlay {
+        display: none !important;
+    }
+
+    .header {
+        background: white !important;
+        border: 1px solid #ddd !important;
+        margin-bottom: 12px;
+        padding: 12px !important;
+    }
+
+    .header-title {
+        color: #1a1a1a !important;
+        -webkit-text-fill-color: #1a1a1a !important;
+        font-size: 16pt !important;
+    }
+
+    .date-nav {
+        justify-content: center !important;
+        background: white !important;
+        border: 1px solid #ddd !important;
+        margin-bottom: 12px;
+        padding: 8px !important;
+    }
+
+    .current-period {
+        color: #1a1a1a !important;
+        font-size: 12pt !important;
+    }
+
+    .gantt-container {
+        background: white !important;
+        border: 1px solid #333 !important;
+        overflow: visible !important;
+        page-break-inside: avoid;
+    }
+
+    .gantt-header,
+    .gantt-row {
+        min-width: auto !important;
+    }
+
+    .gantt-body {
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    .gantt-date-label {
+        background: #f5f5f5 !important;
+        color: #1a1a1a !important;
+    }
+
+    .date-number {
+        color: #1a1a1a !important;
+    }
+
+    .date-day {
+        color: #666 !important;
+    }
+
+    .date-day.sunday {
+        color: #dc2626 !important;
+    }
+
+    .date-day.saturday {
+        color: #2563eb !important;
+    }
+
+    .shift-bar {
+        border: 1px solid rgba(0, 0, 0, 0.3) !important;
+        box-shadow: none !important;
+    }
+
+    .shift-bar .shift-time {
+        display: inline !important;
+    }
+
+    .legend {
+        background: white !important;
+        border: 1px solid #ddd !important;
+        page-break-inside: avoid;
+        margin-top: 12px;
+    }
+
+    .legend-title {
+        color: #1a1a1a !important;
+    }
+
+    .time-cell,
+    .hour-cell {
+        border-color: #ccc !important;
+    }
+}
+
+/* PDF出力用クラス */
+.pdf-export-mode .connection-status,
+.pdf-export-mode .header-actions,
+.pdf-export-mode .role-toggle,
+.pdf-export-mode .date-nav .nav-btn,
+.pdf-export-mode .zoom-controls,
+.pdf-export-mode .admin-panel,
+.pdf-export-mode .message-bar,
+.pdf-export-mode .shift-bar .delete-btn {
+    display: none !important;
+}
+
+.pdf-export-mode .gantt-container {
+    overflow: visible !important;
+}
+
+.pdf-export-mode .gantt-header,
+.pdf-export-mode .gantt-row {
+    min-width: auto !important;
+}
+
+.pdf-export-mode .gantt-body {
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+.pdf-export-mode .shift-bar .shift-time {
+    display: inline !important;
+}
+
+/* レスポンシブ - ズームコントロール */
+@media (max-width: 768px) {
+    .zoom-controls {
+        flex-direction: column;
+        padding: 12px;
+    }
+
+    .zoom-section {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .zoom-slider {
+        width: 80px;
+    }
+
+    .pdf-section {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .pdf-section .btn {
+        flex: 1;
+    }
+
+    .shift-popover {
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%);
+    }
+
+    .popover-content {
+        min-width: 260px;
+        max-width: 90vw;
+    }
+}
+
+/* ========================================
+   PDFローディングスピナー
+   ======================================== */
+.pdf-loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.pdf-loading-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
     }
 }

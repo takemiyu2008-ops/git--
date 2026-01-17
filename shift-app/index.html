@@ -12,6 +12,8 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <!-- html2pdf.js for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 
 <body>
@@ -92,6 +94,26 @@
             </button>
         </div>
 
+        <!-- ズームコントロール & PDF出力 -->
+        <div class="zoom-controls">
+            <div class="zoom-section">
+                <span class="zoom-label">🔍 表示サイズ:</span>
+                <button id="zoomOut" class="zoom-btn">−</button>
+                <input type="range" id="zoomSlider" min="50" max="150" value="100" class="zoom-slider">
+                <button id="zoomIn" class="zoom-btn">+</button>
+                <span id="zoomValue" class="zoom-value">100%</span>
+                <button id="zoomReset" class="btn btn-sm btn-secondary">リセット</button>
+            </div>
+            <div class="pdf-section">
+                <button id="exportPdfBtn" class="btn btn-info">
+                    📄 PDF出力
+                </button>
+                <button id="printBtn" class="btn btn-secondary">
+                    🖨️ 印刷
+                </button>
+            </div>
+        </div>
+
         <!-- ガントチャート -->
         <div class="gantt-container">
             <div class="gantt-header">
@@ -107,6 +129,52 @@
         <div class="legend">
             <div class="legend-title">担当者</div>
             <div class="legend-items" id="legendItems">
+            </div>
+        </div>
+    </div>
+
+    <!-- シフト詳細ポップオーバー -->
+    <div class="shift-popover" id="shiftPopover">
+        <div class="popover-content">
+            <div class="popover-header">
+                <span class="popover-title" id="popoverTitle">シフト詳細</span>
+                <button class="popover-close" id="popoverClose">×</button>
+            </div>
+            <div class="popover-body">
+                <div class="popover-info">
+                    <div class="info-row">
+                        <span class="info-label">担当者:</span>
+                        <span class="info-value" id="popoverName">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">日付:</span>
+                        <span class="info-value" id="popoverDate">-</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">時間:</span>
+                        <span class="info-value" id="popoverTime">-</span>
+                    </div>
+                    <div class="info-row" id="popoverOvernightRow" style="display: none;">
+                        <span class="info-label">タイプ:</span>
+                        <span class="info-value overnight-badge">🌙 夜勤</span>
+                    </div>
+                    <div class="info-row" id="popoverFixedRow" style="display: none;">
+                        <span class="info-label">タイプ:</span>
+                        <span class="info-value fixed-badge">🔁 固定シフト</span>
+                    </div>
+                    <div class="info-row" id="popoverChangeRow" style="display: none;">
+                        <span class="info-label">変更履歴:</span>
+                        <span class="info-value" id="popoverChangeInfo">-</span>
+                    </div>
+                    <div class="info-row" id="popoverSwapRow" style="display: none;">
+                        <span class="info-label">交代履歴:</span>
+                        <span class="info-value" id="popoverSwapInfo">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="popover-actions">
+                <button class="btn btn-primary btn-sm" id="popoverEditBtn">✏️ 編集</button>
+                <button class="btn btn-danger btn-sm" id="popoverDeleteBtn">🗑️ 削除</button>
             </div>
         </div>
     </div>
