@@ -52,6 +52,9 @@
                 <button id="requestLeaveBtn" class="btn btn-secondary">
                     🏖️ 有給申請
                 </button>
+                <button id="requestHolidayBtn" class="btn btn-secondary">
+                    🏠 休日申請
+                </button>
             </div>
         </header>
 
@@ -63,6 +66,8 @@
                     <button class="admin-tab active" data-tab="shiftChanges">シフト変更</button>
                     <button class="admin-tab" data-tab="shiftSwaps">シフト交換</button>
                     <button class="admin-tab" data-tab="leaveRequests">有給申請</button>
+                    <button class="admin-tab" data-tab="holidayRequests">休日申請</button>
+                    <button class="admin-tab" data-tab="history">📜 履歴</button>
                     <button class="admin-tab" data-tab="employees">従業員管理</button>
                     <button class="admin-tab" data-tab="broadcast">全員へ通知</button>
                     <button class="admin-tab" data-tab="settings">設定</button>
@@ -352,6 +357,57 @@
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" id="leaveCancelBtn">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">申請</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 休日申請モーダル -->
+    <div class="modal-overlay" id="holidayModalOverlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 class="modal-title">🏠 休日申請</h2>
+                <button class="modal-close" id="holidayModalClose">×</button>
+            </div>
+            <form id="holidayForm" class="modal-body">
+                <div class="form-group">
+                    <label for="holidayName">申請者名</label>
+                    <select id="holidayName" required></select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="holidayStartDate">開始日</label>
+                        <input type="date" id="holidayStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="holidayEndDate">終了日</label>
+                        <input type="date" id="holidayEndDate" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>シフト交代依頼していますか？</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="holidaySwapRequested" value="no" checked>
+                            <span>いいえ</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="holidaySwapRequested" value="yes">
+                            <span>はい</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group" id="holidaySwapPartnerGroup" style="display: none;">
+                    <label for="holidaySwapPartner">シフト交代している場合は、誰としていますか？</label>
+                    <select id="holidaySwapPartner"></select>
+                </div>
+                <div class="form-group">
+                    <label for="holidayReason">申請理由</label>
+                    <textarea id="holidayReason" placeholder="例：家族との予定のため" rows="3" required></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="holidayCancelBtn">キャンセル</button>
                     <button type="submit" class="btn btn-primary">申請</button>
                 </div>
             </form>

@@ -457,6 +457,66 @@ body {
     color: var(--danger);
 }
 
+/* 履歴タブ */
+.history-card {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.history-card.approved {
+    border-left: 4px solid var(--success);
+}
+
+.history-card.rejected {
+    border-left: 4px solid var(--danger);
+}
+
+.history-card .request-info h4 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.history-card .status-badge {
+    font-size: 0.8rem;
+    padding: 4px 12px;
+}
+
+.history-card .status-badge.approved {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.history-card .status-badge.rejected {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.history-meta {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.history-meta p {
+    margin-bottom: 4px;
+}
+
+.history-filter-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.history-filter-btn.active {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
 /* ========================================
    日付ナビゲーション
    ======================================== */
@@ -508,10 +568,13 @@ body {
     backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
     box-shadow: var(--shadow-lg);
     /* ブラウザのダブルタップズームとピンチズームを無効化し、タップとスクロールは許可 */
     touch-action: manipulation;
+    /* 縦スクロール用に overflow-y を auto に変更 */
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 600px;
 }
 
 .gantt-header {
@@ -531,12 +594,17 @@ body {
     color: var(--text-secondary);
     text-align: center;
     border-right: 1px solid var(--border-color);
+    /* スクロール時に固定 */
+    position: sticky;
+    left: 0;
+    background: var(--bg-secondary);
+    z-index: 11;
 }
 
 .gantt-time-header {
     display: flex;
     flex: 1;
-    overflow-x: auto;
+    overflow-x: visible;
 }
 
 .time-cell {
@@ -556,8 +624,7 @@ body {
 
 /* ガントチャート本体 */
 .gantt-body {
-    max-height: 500px;
-    overflow-y: auto;
+    min-width: fit-content;
 }
 
 .gantt-row {
@@ -584,6 +651,10 @@ body {
     justify-content: center;
     border-right: 1px solid var(--border-color);
     background: var(--bg-secondary);
+    /* 横スクロール時に左側に固定し、シフトバーより上に表示 */
+    position: sticky;
+    left: 0;
+    z-index: 100;
 }
 
 .date-number {
@@ -612,6 +683,8 @@ body {
     display: flex;
     position: relative;
     min-height: 80px;
+    /* 日付ラベルより低いz-indexを設定 */
+    z-index: 1;
 }
 
 .hour-cell {
@@ -632,7 +705,7 @@ body {
     display: flex;
     align-items: center;
     padding: 0 8px;
-    font-size: 0.8rem;
+    font-size: 1.1rem;
     font-weight: 500;
     color: white;
     cursor: pointer;
@@ -772,6 +845,50 @@ body {
             rgba(16, 185, 129, 0.5) 20px);
     border: 2px dashed var(--success);
 }
+
+/* 休日バー */
+.holiday-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: white;
+    background: repeating-linear-gradient(45deg,
+            rgba(59, 130, 246, 0.3),
+            rgba(59, 130, 246, 0.3) 10px,
+            rgba(59, 130, 246, 0.5) 10px,
+            rgba(59, 130, 246, 0.5) 20px);
+    border: 2px dashed var(--info);
+}
+
+/* ラジオボタングループ */
+.radio-group {
+    display: flex;
+    gap: 24px;
+    margin-top: 8px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+
+.radio-label input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-primary);
+    cursor: pointer;
+}
+
 
 /* ========================================
    凡例
@@ -1176,7 +1293,7 @@ body {
     }
 
     .shift-bar {
-        font-size: 0.7rem;
+        font-size: 1rem;
         padding: 0 6px;
         min-height: 28px;
         touch-action: manipulation;
@@ -1473,6 +1590,11 @@ body {
    印刷用スタイル
    ======================================== */
 @media print {
+    @page {
+        size: A4 landscape;
+        margin: 5mm;
+    }
+
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
@@ -1482,7 +1604,6 @@ body {
     body {
         background: white !important;
         color: #1a1a1a !important;
-        font-size: 10pt;
     }
 
     .app-container {
@@ -1500,46 +1621,51 @@ body {
     .message-bar,
     .shift-bar .delete-btn,
     .shift-popover,
-    .modal-overlay {
+    .modal-overlay,
+    .legend {
         display: none !important;
     }
 
     .header {
         background: white !important;
         border: 1px solid #ddd !important;
-        margin-bottom: 12px;
-        padding: 12px !important;
+        margin-bottom: 6px;
+        padding: 6px !important;
     }
 
     .header-title {
         color: #1a1a1a !important;
         -webkit-text-fill-color: #1a1a1a !important;
-        font-size: 16pt !important;
+        font-size: 12pt !important;
     }
 
     .date-nav {
         justify-content: center !important;
         background: white !important;
         border: 1px solid #ddd !important;
-        margin-bottom: 12px;
-        padding: 8px !important;
+        margin-bottom: 6px;
+        padding: 4px !important;
     }
 
     .current-period {
         color: #1a1a1a !important;
-        font-size: 12pt !important;
+        font-size: 10pt !important;
     }
 
     .gantt-container {
         background: white !important;
         border: 1px solid #333 !important;
         overflow: visible !important;
-        page-break-inside: avoid;
+        max-height: none !important;
     }
 
-    .gantt-header,
-    .gantt-row {
-        min-width: auto !important;
+    /* 印刷時はstickyを解除 */
+    .gantt-header {
+        position: relative !important;
+    }
+
+    .gantt-label-header {
+        position: relative !important;
     }
 
     .gantt-body {
@@ -1548,6 +1674,7 @@ body {
     }
 
     .gantt-date-label {
+        position: relative !important;
         background: #f5f5f5 !important;
         color: #1a1a1a !important;
     }
@@ -1568,6 +1695,11 @@ body {
         color: #2563eb !important;
     }
 
+    .time-cell,
+    .hour-cell {
+        border-color: #ccc !important;
+    }
+
     .shift-bar {
         border: 1px solid rgba(0, 0, 0, 0.3) !important;
         box-shadow: none !important;
@@ -1575,22 +1707,6 @@ body {
 
     .shift-bar .shift-time {
         display: inline !important;
-    }
-
-    .legend {
-        background: white !important;
-        border: 1px solid #ddd !important;
-        page-break-inside: avoid;
-        margin-top: 12px;
-    }
-
-    .legend-title {
-        color: #1a1a1a !important;
-    }
-
-    .time-cell,
-    .hour-cell {
-        border-color: #ccc !important;
     }
 }
 
