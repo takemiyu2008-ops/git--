@@ -296,9 +296,55 @@ function renderGanttBody() {
         holidays.forEach((h, idx) => {
             const bar = document.createElement('div');
             bar.className = 'holiday-bar';
+            bar.dataset.holidayId = h.id;
+
+            // シフト時間情報がある場合は、その時間に合わせて表示
+            if (h.startHour !== undefined && h.endHour !== undefined) {
+                let start = h.startHour;
+                let end = h.endHour;
+                // 夜勤の場合は24時まで表示
+                if (h.overnight) end = 24;
+
+                const leftPercent = (start / 24) * 100;
+                const widthPercent = ((end - start) / 24) * 100;
+                bar.style.left = `${leftPercent}%`;
+                bar.style.width = `${widthPercent}%`;
+            }
+            // シフト時間情報がない場合は全幅で表示（従来の動作）
+
             bar.style.top = `${baseH + (maxLvl + 1 + barCount + idx) * perLvl}px`;
             bar.style.height = `${perLvl - 4}px`;
-            bar.textContent = `🏠 ${h.name} 休日`;
+
+            // 時間表示を追加
+            let timeText = '';
+            if (h.startHour !== undefined && h.endHour !== undefined) {
+                if (h.overnight) {
+                    timeText = ` ${formatTime(h.startHour)}-翌${formatTime(h.endHour)}`;
+                } else {
+                    timeText = ` ${formatTime(h.startHour)}-${formatTime(h.endHour)}`;
+                }
+            }
+            bar.textContent = `🏠 ${h.name} 休日${timeText}`;
+
+            // クリック/タップで削除
+            bar.style.cursor = 'pointer';
+            bar.title = 'クリックで休日を取り消し';
+
+            const handleDeleteHoliday = () => {
+                if (confirm(`${h.name}さんの休日（${h.startDate}）を取り消しますか？`)) {
+                    state.holidayRequests = state.holidayRequests.filter(x => x.id !== h.id);
+                    saveToFirebase('holidayRequests', state.holidayRequests);
+                    render();
+                }
+            };
+
+            bar.addEventListener('click', handleDeleteHoliday);
+            bar.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteHoliday();
+            }, { passive: false });
+
             timeline.appendChild(bar);
         });
         barCount += holidays.length;
@@ -1870,6 +1916,112 @@ function initPopoverEvents() {
             e.preventDefault();
             e.stopPropagation();
             handleDelete();
+        }, { passive: false });
+    }
+
+    // 休みボタン
+    const dayOffBtn = document.getElementById('popoverDayOffBtn');
+    const handleDayOff = () => {
+        if (state.currentPopoverShift) {
+            const s = state.currentPopoverShift;
+            closeShiftPopover();
+            setTimeout(() => {
+                if (confirm('このシフトを休みにしますか？\nシフトが削除され、休日バーが表示されます。')) {
+                    // シフトの担当者名と日付を取得
+                    let name, date;
+                    if (s.isFixed) {
+                        const parts = s.id.split('-');
+                        const originalId = parts[1];
+                        const fixed = state.fixedShifts.find(f => f.id === originalId);
+                        if (fixed) {
+                            name = fixed.name;
+                            date = s.date;
+                        }
+                    } else if (s.isOvernightContinuation && s.id.startsWith('on-')) {
+                        const originalId = s.id.replace('on-', '');
+                        const original = state.shifts.find(x => x.id === originalId);
+                        if (original) {
+                            name = original.name;
+                            date = original.date;
+                        }
+                    } else {
+                        name = s.name;
+                        date = s.date;
+                    }
+
+                    if (name && date) {
+                        // シフトの時間情報も取得
+                        let startHour, endHour, overnight;
+                        if (s.isFixed) {
+                            const parts = s.id.split('-');
+                            const originalId = parts[1];
+                            const fixed = state.fixedShifts.find(f => f.id === originalId);
+                            if (fixed) {
+                                startHour = fixed.startHour;
+                                endHour = fixed.endHour;
+                                overnight = fixed.overnight || false;
+                            }
+                        } else if (s.isOvernightContinuation && s.id.startsWith('on-')) {
+                            const originalId = s.id.replace('on-', '');
+                            const original = state.shifts.find(x => x.id === originalId);
+                            if (original) {
+                                startHour = original.startHour;
+                                endHour = original.endHour;
+                                overnight = original.overnight || false;
+                            }
+                        } else {
+                            startHour = s.startHour;
+                            endHour = s.endHour;
+                            overnight = s.overnight || false;
+                        }
+
+                        // 承認済みの休日リクエストを直接追加（管理者による即時承認）
+                        const holidayRequest = {
+                            id: Date.now().toString(),
+                            name: name,
+                            startDate: date,
+                            endDate: date,
+                            startHour: startHour,
+                            endHour: endHour,
+                            overnight: overnight,
+                            reason: '突発的な休み',
+                            swapRequested: false,
+                            swapPartner: null,
+                            status: 'approved',
+                            createdAt: new Date().toISOString(),
+                            approvedAt: new Date().toISOString(),
+                            processedBy: '管理者（即時承認）'
+                        };
+                        state.holidayRequests.push(holidayRequest);
+                        saveToFirebase('holidayRequests', state.holidayRequests);
+
+                        // シフトを削除
+                        if (s.isFixed) {
+                            // 固定シフトの場合は削除しない（休日バーだけ表示）
+                            // 必要に応じて固定シフトを削除する場合はコメントアウトを解除
+                            // const parts = s.id.split('-');
+                            // deleteFixedShift(parts[1]);
+                        } else if (s.isOvernightContinuation && s.id.startsWith('on-')) {
+                            const originalId = s.id.replace('on-', '');
+                            deleteShift(originalId);
+                        } else {
+                            deleteShift(s.id);
+                        }
+
+                        alert('休みに変更しました。');
+                        render();
+                    }
+                }
+            }, 100);
+        }
+    };
+
+    if (dayOffBtn) {
+        dayOffBtn.onclick = handleDayOff;
+        dayOffBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleDayOff();
         }, { passive: false });
     }
 

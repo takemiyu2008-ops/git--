@@ -264,6 +264,15 @@ body {
     background: #2563eb;
 }
 
+.btn-warning {
+    background: var(--warning);
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #d97706;
+}
+
 .btn-sm {
     padding: 8px 12px;
     font-size: 0.85rem;
@@ -849,8 +858,6 @@ body {
 /* 休日バー */
 .holiday-bar {
     position: absolute;
-    left: 0;
-    right: 0;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
@@ -860,11 +867,26 @@ body {
     font-weight: 500;
     color: white;
     background: repeating-linear-gradient(45deg,
-            rgba(59, 130, 246, 0.3),
-            rgba(59, 130, 246, 0.3) 10px,
-            rgba(59, 130, 246, 0.5) 10px,
-            rgba(59, 130, 246, 0.5) 20px);
-    border: 2px dashed var(--info);
+            rgba(239, 68, 68, 0.4),
+            rgba(239, 68, 68, 0.4) 10px,
+            rgba(239, 68, 68, 0.6) 10px,
+            rgba(239, 68, 68, 0.6) 20px);
+    border: 2px dashed var(--danger);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.holiday-bar:hover {
+    transform: scale(1.02);
+    box-shadow: var(--shadow-md);
+    background: repeating-linear-gradient(45deg,
+            rgba(239, 68, 68, 0.5),
+            rgba(239, 68, 68, 0.5) 10px,
+            rgba(239, 68, 68, 0.7) 10px,
+            rgba(239, 68, 68, 0.7) 20px);
 }
 
 /* ラジオボタングループ */
