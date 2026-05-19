@@ -1,0 +1,6 @@
+# 内側に独立した git repo（github.com/takemiyu2008-ops/shift-app）があるため、
+# 外側 repo からは追跡しない。
+shift-app/
+
+# macOS
+.DS_Store
